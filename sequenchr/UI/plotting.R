@@ -1,5 +1,5 @@
 UI_plotting <- tabPanel(
-  title = "Plotting",
+  title = "Descriptive",
   sidebarLayout(
     sidebarPanel(
       width = 6,

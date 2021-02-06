@@ -8,11 +8,11 @@ library(arm) # currently just for lalonde dataset
 library(viridis) # for color blind sensitive colors
 theme_set(theme_minimal())
 
-# this shouldn't be neccessary but is currently required
+# this shouldn't be necessary but is currently required
 setwd("sequenchr")
 
 # load UI
-map(list.files('UI'), function(file) source(file.path("UI", file)))
+map(list.files('UI'), function(file) source(file.path("UI", file))) # TODO: is there a do this w/o global vars?
 source('main_ui.R', local = TRUE)
 
 # set default object if one doesn't exist
