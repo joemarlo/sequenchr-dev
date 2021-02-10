@@ -32,18 +32,18 @@ UI_clustering <- tabPanel(
       tabsetPanel(
         id = 'clustering_tabs',
         type = 'tabs',
-        tabPanel(
-          title = 'Dendrogram',
-          br(),
-          plotOutput(outputId = 'clustering_plot_dendrogram',
-                     height = 500)
-        ),
-        tabPanel(
-          title = 'Silhouette plot',
-          br(),
-          plotOutput(outputId = 'clustering_plot_silhouette',
-                     height = 500)
-        ),
+        # tabPanel(
+        #   title = 'Dendrogram',
+        #   br(),
+        #   plotOutput(outputId = 'clustering_plot_dendrogram',
+        #              height = 500)
+        # ),
+        # tabPanel(
+        #   title = 'Silhouette plot',
+        #   br(),
+        #   plotOutput(outputId = 'clustering_plot_silhouette',
+        #              height = 500)
+        # ),
         tabPanel(
           title = 'Sequence plot by cluster',
           br(),

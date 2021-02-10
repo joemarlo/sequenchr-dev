@@ -68,18 +68,55 @@ shinyApp(
 
         # render the sequence plot
         output$plotting_plot_sequence <- renderPlot({
-            store$tidy_data %>% 
-                group_by(sequenchr_seq_id) %>% 
-                mutate(entropy = DescTools::Entropy(table(value))) %>%
-                ungroup() %>% 
-                ggplot(aes(x = period, y = reorder(sequenchr_seq_id, entropy), fill = value)) +
-                geom_tile() +
-                scale_fill_manual(values = color_mapping) +
-                scale_y_discrete(labels = NULL) +
-                labs(title = "All sequences sorted by entropy",
-                     x = 'Period',
-                     y = 'Sequence',
-                     fill = NULL)
+            
+            if (isFALSE(input$plotting_check_cluster)){
+                
+                # plot the regular sequences without clustering
+                p <- store$tidy_data %>% 
+                    group_by(sequenchr_seq_id) %>% 
+                    mutate(entropy = DescTools::Entropy(table(value))) %>%
+                    ungroup() %>% 
+                    ggplot(aes(x = period, y = reorder(sequenchr_seq_id, entropy), fill = value)) +
+                    geom_tile() +
+                    scale_fill_manual(values = color_mapping) +
+                    scale_y_discrete(labels = NULL) +
+                    labs(title = "All sequences sorted by entropy",
+                         x = 'Period',
+                         y = 'Sequence',
+                         fill = NULL)
+            } else {
+                # stop here if clustering hasn't been run yet
+                validate(need(is(store$cluster, 'hclust'),
+                              'Cluster the data first'))
+                
+                # get the cluster assignments and clean up
+                hcl_k <- input$clustering_slider_n_clusters
+                cluster_assignments <- cutree(store$cluster, k = hcl_k)
+                cluster_ns <- table(cluster_assignments)
+                cluster_assignments <- factor(
+                    cluster_assignments, 
+                    labels = paste("Cluster", 1:hcl_k, " | n = ", cluster_ns)
+                )
+                
+                # plot the sequences with clusters
+                p <- tibble(cluster = cluster_assignments,
+                            sequenchr_seq_id = 1:length(cluster_assignments)) %>% 
+                    right_join(store$tidy_data, by = 'sequenchr_seq_id') %>% 
+                    group_by(sequenchr_seq_id) %>% 
+                    mutate(entropy = DescTools::Entropy(table(value))) %>%
+                    ungroup() %>% 
+                    ggplot(aes(x = period, y = reorder(sequenchr_seq_id, entropy), fill = value)) +
+                    geom_tile() +
+                    scale_fill_manual(values = color_mapping) +
+                    scale_y_discrete(labels = NULL) +
+                    facet_wrap(~cluster, scales = 'free_y') +
+                    labs(title = "All sequences by cluster sorted by entropy",
+                         x = 'Period',
+                         y = 'Sequence',
+                         fill = NULL)
+            }
+            
+            return(p)
         })
         
         # render the top 10 most commmon sequences
@@ -158,6 +195,37 @@ shinyApp(
             
             # cluster the data
             store$cluster <- fastcluster::hclust(as.dist(store$dist_matrix), method = "ward.D2")
+            
+            # remove and add dendrogram tab
+            removeTab(inputId = 'plotting_tabs',
+                      target = 'Dendrogram')
+            insertTab(
+                inputId = 'plotting_tabs',
+                target = 'Legend',
+                position = 'after',
+                select = TRUE,
+                tab = tabPanel(
+                    title = 'Dendrogram',
+                    br(),
+                    plotOutput(outputId = 'clustering_plot_dendrogram',
+                               height = 500)
+                )
+            )
+            
+            # add cluster assignments to the tidy data
+            # hcl_k <- input$clustering_slider_n_clusters
+            # cluster_assignments <- cutree(store$cluster, k = hcl_k)
+            # cluster_ns <- table(cluster_assignments)
+            # cluster_assignments <- factor(
+            #     cluster_assignments, 
+            #     labels = paste("Cluster", 1:hcl_k, " | n = ", cluster_ns)
+            # )
+            # 
+            # # plot the sequences with clusters
+            # store$tidy_data <- tibble(cluster = cluster_assignments,
+            #             sequenchr_seq_id = 1:length(cluster_assignments)) %>% 
+            #     right_join(store$tidy_data, by = 'sequenchr_seq_id') 
+            
         })
         
         # plot the dendrogram
@@ -222,10 +290,21 @@ shinyApp(
                               inputId = 'clustering_slider_n_clusters',
                               selected = store$s_width$Best.nc[['Number_clusters']])
             
-            # move user to silhouette plot tab
-            updateTabsetPanel(session = session, 
-                              inputId = "clustering_tabs", 
-                              selected = "Silhouette plot")
+            # remove and add silhouette plot tab
+            removeTab(inputId = 'plotting_tabs',
+                      target = 'Silhouette plot')
+            insertTab(
+                inputId = 'plotting_tabs',
+                target = 'Dendrogram',
+                position = 'after',
+                select = TRUE,
+                tab = tabPanel(
+                    title = 'Silhouette plot',
+                    br(),
+                    plotOutput(outputId = 'clustering_plot_silhouette',
+                               height = 500)
+                )
+            )
         })
         
         # plot the silhouette width
@@ -247,42 +326,6 @@ shinyApp(
                      subtitle = 'Greater width is better',
                      x = 'n clusters',
                      y = 'Silhouette width') 
-        })
-        
-        # plot  the sequences by cluster
-        output$clustering_plot_sequence <- renderPlot({
-            
-            # stop here if clustering hasn't been run yet
-            validate(need(is(store$cluster, 'hclust'),
-                          'Cluster the data first'))
-            
-            # get the cluster assignments and clean up
-            hcl_k <- input$clustering_slider_n_clusters
-            cluster_assignments <- cutree(store$cluster, k = hcl_k)
-            cluster_ns <- table(cluster_assignments)
-            cluster_assignments <- factor(
-                cluster_assignments, 
-                labels = paste("Cluster", 1:hcl_k, " | n = ", cluster_ns)
-                )
-            
-            # plot it
-            p <- tibble(cluster = cluster_assignments,
-                   sequenchr_seq_id = 1:length(cluster_assignments)) %>% 
-                right_join(store$tidy_data, by = 'sequenchr_seq_id') %>% 
-                group_by(sequenchr_seq_id) %>% 
-                mutate(entropy = DescTools::Entropy(table(value))) %>%
-                ungroup() %>% 
-                ggplot(aes(x = period, y = reorder(sequenchr_seq_id, entropy), fill = value)) +
-                geom_tile() +
-                scale_fill_manual(values = color_mapping) +
-                scale_y_discrete(labels = NULL) +
-                facet_wrap(~cluster, scales = 'free_y') +
-                labs(title = "All sequences by cluster",
-                     x = 'Period',
-                     y = 'Sequence',
-                     fill = NULL)
-            
-            return(p)
         })
         
 
