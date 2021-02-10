@@ -29,30 +29,111 @@ shinyApp(
         oldwd <- setwd(appDir)
         # on.exit(setwd(oldwd))
         on.exit(setwd(".."))
-    
-        output$summary_table <- renderTable({
+        
+        # initialize store
+        store <- reactiveValues()
+        
+        # establish color mapping
+        color_mapping <- viridis::viridis_pal()(length(alphabet(sequence_data)))
+        names(color_mapping) <- alphabet(sequence_data)
+        store$color_mapping <- color_mapping
+        
+        # tidy the data
+        store$tidy_data <- sequence_data %>%
+            as_tibble() %>% 
+            setNames(1:ncol(sequence_data)) %>% 
+            mutate(sequenchr_seq_id = row_number()) %>%
+            pivot_longer(cols = setdiff(colnames(.), "sequenchr_seq_id")) %>% 
+            mutate(period = as.numeric(name))
+        
+        # summary table
+        output$summary_table <- renderText({
             data.frame(
-                n_sequences = nrow(sequence_data),
-                unique_sequences = nrow(distinct(as.data.frame(sequence_data)))
-            )
+                'n sequences' = nrow(sequence_data),
+                'n unique sequences' = nrow(distinct(as.data.frame(sequence_data)))
+            ) %>% 
+                t() %>% 
+                knitr::kable(digits = 2, format = 'html') %>% 
+                kableExtra::kable_styling(bootstrap_options = c("hover", "condensed"))
         })
         
 
-# plotting ----------------------------------------------------------------
+        # plotting ----------------------------------------------------------------
 
         # render the sequence plot
         output$plotting_plot_sequence <- renderPlot({
-            sequence_data %>%
-                as_tibble() %>% 
-                setNames(1:ncol(sequence_data)) %>% 
-                mutate(sequenchr_seq_id = row_number()) %>%
-                pivot_longer(cols = setdiff(colnames(.), "sequenchr_seq_id")) %>%
-                mutate(period = as.numeric(name)) %>% 
-                ggplot(aes(x=period, y=sequenchr_seq_id, fill=value)) +
+            store$tidy_data %>% 
+                ggplot(aes(x = period, y = sequenchr_seq_id, fill = value)) +
                 geom_tile() +
-                labs(title = "lorem ipsum",
+                scale_fill_manual(values = color_mapping) +
+                labs(title = "All sequences sorted",
                      x = 'Period',
-                     y = 'Sequence')
-        })        
+                     y = 'Sequence',
+                     fill = NULL)
+        })
+        
+        # render the top 10 most commmon sequences
+        # should show frequency of sequence somehow
+        output$plotting_plot_common <- renderPlot({
+            store$tidy_data %>% 
+                group_by(sequenchr_seq_id) %>% 
+                summarize(seq_collapsed = paste0(value, collapse = 'SE3P'),
+                          .groups = 'drop') %>% 
+                count(seq_collapsed) %>% 
+                arrange(desc(n)) %>%
+                slice_head(n = 10) %>% 
+                separate(seq_collapsed, into = paste0('p', 1:48), sep = "SE3P") %>% 
+                mutate(sequenchr_seq_id = row_number()) %>%
+                pivot_longer(cols = setdiff(colnames(.), c('n', "sequenchr_seq_id"))) %>% 
+                mutate(name = as.numeric(stringr::str_remove(name, 'p'))) %>% 
+                rename(period = name) %>% 
+                ggplot(aes(x = period, y = sequenchr_seq_id, fill = value)) +
+                geom_tile() +
+                scale_fill_manual(values = color_mapping) +
+                scale_y_continuous(breaks = 1:10) +
+                labs(title = "Top 10 most common sequences",
+                     x = 'Period',
+                     y = 'Sequence (ranked)',
+                     fill = NULL)
+        })  
+        
+        # plot of just the legend colors
+        output$plotting_plot_legend <- renderPlot({
+            as_tibble(names(store$color_mapping)) %>%
+                mutate(index = row_number()) %>% 
+                ggplot(aes(x=1, y = reorder(value, -index), fill = value)) + 
+                geom_tile(color = 'white', size = 3) + 
+                scale_fill_manual(values = color_mapping) +
+                scale_x_continuous(labels = NULL) + 
+                labs(x = NULL, y = NULL) + 
+                theme(legend.position = 'none')
+        })
+        
+        # state distribution plot
+        output$plotting_plot_state <- renderPlot({
+            store$tidy_data %>% 
+                ggplot(aes(x = period, fill = value)) +
+                geom_bar(width = 1) +
+                scale_fill_manual(values = color_mapping) +
+                labs(title = "State distributions",
+                     x = 'Period',
+                     y = 'Frequency',
+                     fill = NULL)
+        })
+        
+        # modal plot
+        output$plotting_plot_modal <- renderPlot({
+            store$tidy_data %>% 
+                count(value, period) %>% 
+                group_by(period) %>% 
+                filter(n == max(n)) %>% 
+                ggplot(aes(x = period, y = n, fill = value)) +
+                geom_col() +
+                scale_fill_manual(values = color_mapping) +
+                labs(title = "Modal activity per period",
+                     x = "Period",
+                     y = 'Frequency',
+                     fill = NULL)  
+        })
     }
 )

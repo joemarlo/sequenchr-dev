@@ -66,14 +66,55 @@ atus_seq <- seqdef(data = atus_sampled[, -1],
 launch_sequenchr(atus_seq)
 
 
-atus_seq %>%
+tidy_data <- atus_seq %>%
   as_tibble() %>% 
   setNames(1:ncol(atus_seq)) %>% 
   mutate(sequenchr_seq_id = row_number()) %>%
-  pivot_longer(cols = setdiff(colnames(.), "sequenchr_seq_id")) %>%
-  mutate(period = as.numeric(name)) %>% 
-  ggplot(aes(x=period, y=sequenchr_seq_id, fill=value)) +
-  geom_tile()
+  pivot_longer(cols = setdiff(colnames(.), "sequenchr_seq_id")) %>% 
+  mutate(period = as.numeric(name))
+
+tidy_data %>% 
+  ggplot(aes(x = period, y = sequenchr_seq_id, fill = value)) +
+  geom_tile() +
+  scale_fill_manual(values = color_mapping)
+
+tidy_data %>% 
+  group_by(sequenchr_seq_id) %>% 
+  summarize(seq_collapsed = paste0(value, collapse = 'SE3P'),
+            .groups = 'drop') %>% 
+  count(seq_collapsed) %>% 
+  arrange(desc(n)) %>%
+  slice_head(n = 10) %>% 
+  separate(seq_collapsed, into = paste0('p', 1:48), sep = "SE3P") %>% 
+  mutate(sequenchr_seq_id = row_number()) %>%
+  pivot_longer(cols = setdiff(colnames(.), c('n', "sequenchr_seq_id"))) %>% 
+  mutate(name = as.numeric(stringr::str_remove(name, 'p'))) %>% 
+  rename(period = name) %>% 
+  ggplot(aes(x = period, y = sequenchr_seq_id, fill = value)) +
+  geom_tile() +
+  scale_fill_manual(values = color_mapping)
+
+
+color_mapping <- viridis::viridis_pal()(length(alphabet(atus_seq)))
+names(color_mapping) <- alphabet(atus_seq)
+
+tidy_data %>% 
+  # count(value, period) %>% 
+  ggplot(aes(x = period, fill = value)) +
+  geom_bar(width = 1) +
+  scale_fill_manual(values = color_mapping)
+
+tidy_data %>% 
+  count(value, period) %>% 
+  group_by(period) %>% 
+  filter(n == max(n)) %>% 
+  ggplot(aes(x = period, y = n, fill = value)) +
+  geom_col() +
+  scale_fill_manual(values = color_mapping) +
+  labs(title = "Modal activity per period",
+       x = "Period",
+       y = 'Frequency',
+       fill = NULL)
 
 
 # blacklist

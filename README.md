@@ -6,7 +6,7 @@ Sequence analysis tool for applied researchers. Designed for faster analysis ite
 source('launch_sequenchr.R')
 library(TraMineR)
 
-# load data and
+# load data and convert to a sequence object
 data(mvad)
 seqstatl(mvad[, 17:86])
 mvad.alphabet <- c("employment", "FE", "HE", "joblessness", "school",
@@ -17,6 +17,6 @@ mvad.scodes <- c("EM", "FE", "HE", "JL", "SC", "TR")
 mvad.seq <- seqdef(mvad, 17:86, alphabet = mvad.alphabet, states = mvad.scodes,
                    labels = mvad.labels, xtstep = 6)
 
-# launch the shiny app
+# launch the sequenchr app
 launch_sequenchr(mvad.seq)
 ```

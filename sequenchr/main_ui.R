@@ -13,15 +13,15 @@ main_UI <- fluidPage(
     
     # set top left title
     titlePanel(
-        title = h2("sequenchr"),
-        windowTitle = "sequenchr"
+      title = h2("sequenchr"),
+      windowTitle = "sequenchr"
     ),
     
     # set main navigation
+    # TODO: redesign UI so more like shinystan
     navbarPage(
       id = "nav",
       title = 'sequenchr',
-      UI_welcome,
       UI_plotting,
       UI_clustering
     )
