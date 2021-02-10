@@ -6,6 +6,7 @@ library(shinythemes)
 library(shinyWidgets) # for slider skin
 library(arm) # currently just for lalonde dataset
 library(viridis) # for color blind sensitive colors
+library(dendextend) # for dendroram
 theme_set(theme_minimal())
 
 # this shouldn't be necessary but is currently required
@@ -134,6 +135,101 @@ shinyApp(
                      x = "Period",
                      y = 'Frequency',
                      fill = NULL)  
+        })
+        
+
+    # clustering --------------------------------------------------------------
+
+        # cluster the data
+        observeEvent(input$clustering_button_cluster, {
+          
+            # compute optimal matching distances
+            store$dist_matrix <- seqdist(atus_seq, method = "OM", indel = 1, sm = "TRATE")
+            # dist_om_DHD <- seqdist(atus_seq, method = "DHD")
+            
+            # cluster the data
+            store$cluster <- fastcluster::hclust(as.dist(store$dist_matrix), method = "ward.D2")
+        })
+        
+        # plot the dendrogram
+        output$clustering_plot_dendrogram <- renderPlot({
+            
+            # stop here if clustering hasn't been run yet
+            validate(need(is(store$cluster, 'hclust'),
+                          'Cluster the data first'))
+            
+            
+            hcl_ward <- store$cluster
+            hcl_k <- input$clustering_slider_n_clusters
+            
+            # build base dendrogram
+            dend <- as.dendrogram(hcl_ward) %>% set("branches_k_color", k = hcl_k) %>% set("labels_colors")
+            
+            # cut off bottom of dendogram for computation performance
+            # TODO: need a reactive way to do this
+            dend <- cut(dend, h = 50)$upper
+            ggd1 <- as.ggdend(dend)
+            
+            # set dashed line for non-cluster segments
+            ggd1$segments$linetype <- 'solid'
+            ggd1$segments$linetype[which(is.na(ggd1$segments$col))] <- 'dashed'
+            
+            # set connecting lines to grey
+            ggd1$segments$col[is.na(ggd1$segments$col)] <- 'grey50'
+            
+            # plot the dendrograms
+            ggd1$segments %>% 
+                ggplot() + 
+                geom_segment(aes(x = x, y = y, xend = xend, yend = yend),
+                             color = ggd1$segments$col, linetype = ggd1$segments$linetype,
+                             lwd = 0.6, alpha = 0.7) +
+                scale_x_continuous(labels = NULL) +
+                scale_y_continuous(labels = scales::comma_format()) +
+                labs(title = "Dendrogram of edit distance with Ward (D2) linkage",
+                     subtitle = paste0("Weighted sample of ", 
+                                       scales::comma_format()(n_sample),
+                                       " respondents"),
+                     x = NULL,
+                     y = NULL) +
+                theme(axis.ticks = element_blank(),
+                      panel.grid.major.x = element_blank(),
+                      panel.grid.minor.x = element_blank(),
+                      legend.position = 'none')
+        })
+        
+        # compute and plot silhouette width
+        observeEvent(input$clustering_button_silhouette, {
+            # get optimal cluster sizes by calculating silhouette width
+            store$s_width <- NbClust::NbClust(
+                data = NULL,
+                diss = as.dist(store$dist_matrix),
+                distance = NULL,
+                method = 'ward.D2',
+                max.nc = 10,
+                min.nc = 2,
+                index = 'silhouette'
+            )
+        })
+        
+        # plot the silhouette width
+        output$clustering_plot_silhouette <- renderPlot({
+            
+            # stop here if silhouette width hasn't been run yet
+            validate(need(is(store$s_width, 'list'),
+                          'Calculate the silhouette width first'))
+            
+            store$s_width$All.index %>% 
+                enframe() %>% 
+                mutate(name = as.numeric(name)) %>% 
+                ggplot(aes(x = name, y = value)) +
+                geom_line(color = 'grey30') +
+                geom_area(alpha = 0.4) +
+                geom_point(color = 'grey30') +
+                scale_x_continuous(breaks = 2:10) +
+                labs(title = "Silhouette width",
+                     subtitle = 'Greater width is better',
+                     x = 'n clusters',
+                     y = 'Silhouette width') 
         })
     }
 )

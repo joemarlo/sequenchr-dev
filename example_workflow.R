@@ -66,6 +66,9 @@ atus_seq <- seqdef(data = atus_sampled[, -1],
 launch_sequenchr(atus_seq)
 
 
+
+# scratch work ------------------------------------------------------------
+
 tidy_data <- atus_seq %>%
   as_tibble() %>% 
   setNames(1:ncol(atus_seq)) %>% 
@@ -116,6 +119,84 @@ tidy_data %>%
        y = 'Frequency',
        fill = NULL)
 
+
+
+# clustering --------------------------------------------------------------
+
+
+# compute optimal matching distances
+dist_om_TRATE <- seqdist(atus_seq, method = "OM", indel = 1, sm = "TRATE")
+# dist_om_DHD <- seqdist(atus_seq, method = "DHD")
+
+# cluster the data
+clusters <- fastcluster::hclust(as.dist(dist_om_TRATE), method = "ward.D2")
+
+# get optimal cluster sizes by calculating silhouette width
+s_width <- NbClust::NbClust(
+  data = NULL,
+  diss = as.dist(dist_om_TRATE),
+  distance = NULL,
+  method = 'ward.D2',
+  max.nc = 12,
+  min.nc = 6,
+  index = 'silhouette'
+)
+
+# plot the silhouette width
+s_width$All.index %>% 
+  enframe() %>% 
+  mutate(name = as.numeric(name)) %>% 
+  ggplot(aes(x = name, y = value)) +
+  geom_line(color = 'grey30') +
+  geom_area(alpha = 0.4) +
+  geom_point(color = 'grey30') +
+  scale_x_continuous(breaks = 6:12) +
+  labs(title = "Silhouette width",
+       subtitle = 'Greater width is better',
+       x = 'n clusters',
+       y = 'Silhouette width')
+# ggsave("Plots/silhouette_width.svg", width = 7, height = 4)
+
+
+# dendrograms -------------------------------------------------------------
+
+hcl_ward <- clusters
+hcl_k <- 7 #s_width$Best.nc[['Number_clusters']] # need a balance of optimal width and enough clusters to be interesting to the user
+dend <- as.dendrogram(hcl_ward) %>% set("branches_k_color", k = hcl_k) %>% set("labels_colors")
+dend <- cut(dend, h = 50)$upper # cut off bottom of dendogram for computation performance
+ggd1 <- as.ggdend(dend)
+
+# set dashed line for non-cluster segments
+ggd1$segments$linetype <- 'solid'
+ggd1$segments$linetype[which(is.na(ggd1$segments$col))] <- 'dashed'
+
+# set connecting lines to grey
+ggd1$segments$col[is.na(ggd1$segments$col)] <- 'grey50'
+
+# plot the dendrograms
+ggd1$segments %>% 
+  ggplot() + 
+  geom_segment(aes(x = x, y = y, xend = xend, yend = yend),
+               color = ggd1$segments$col, linetype = ggd1$segments$linetype,
+               lwd = 0.6, alpha = 0.7) +
+  scale_x_continuous(labels = NULL) +
+  scale_y_continuous(labels = scales::comma_format()) +
+  labs(title = "Dendrogram of edit distance with Ward (D2) linkage",
+       subtitle = paste0("Weighted sample of ", 
+                         scales::comma_format()(n_sample),
+                         " respondents"),
+       x = NULL,
+       y = NULL) +
+  theme(axis.ticks = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        legend.position = 'none')
+# ggsave("Plots/dendrogram.png", width = 7, height = 4)
+
+# sequence plots ----------------------------------------------------------
+
+cluster_6 <- cutree(clusters, k = hcl_k)
+cluster_6 <- factor(cluster_6, labels = paste("Cluster", 1:hcl_k))
 
 # blacklist
 # sequenchr_period
