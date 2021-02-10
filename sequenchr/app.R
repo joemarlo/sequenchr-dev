@@ -1,13 +1,15 @@
 require(tidyverse)
-require(DT)
-require(shinyBS)
+# require(DT)
+# require(shinyBS)
 require(shiny)
-library(shinythemes)
+# library(shinythemes)
 library(shinyWidgets) # for slider skin
 library(arm) # currently just for lalonde dataset
 library(viridis) # for color blind sensitive colors
+library(TraMineR)
 library(dendextend) # for dendroram
-library(r2d3) # for explore
+# library(r2d3) # for explore
+library(chorddiag) # for chord plot
 theme_set(theme_minimal())
 
 # this shouldn't be necessary but is currently required
@@ -20,7 +22,7 @@ source('main_ui.R', local = TRUE)
 # set default object if one doesn't exist
 # TODO: change this to stop if input doesn't exist
 appDir <- getwd()
-sequence_data_default <- mtcars
+sequence_data_default <- atus_seq #mtcars
 sequence_data <- getShinyOption("sequence_data", sequence_data_default)
 
 
@@ -30,7 +32,7 @@ shinyApp(
         
         # set and reset working directory
         oldwd <- setwd(appDir)
-        # on.exit(setwd(oldwd))
+        on.exit(setwd(oldwd))
         on.exit(setwd(".."))
         
         # initialize store
@@ -70,9 +72,10 @@ shinyApp(
                 group_by(sequenchr_seq_id) %>% 
                 mutate(entropy = DescTools::Entropy(table(value))) %>%
                 ungroup() %>% 
-                ggplot(aes(x = period, y = sequenchr_seq_id, fill = value)) +
+                ggplot(aes(x = period, y = reorder(sequenchr_seq_id, entropy), fill = value)) +
                 geom_tile() +
                 scale_fill_manual(values = color_mapping) +
+                scale_y_discrete(labels = NULL) +
                 labs(title = "All sequences sorted by entropy",
                      x = 'Period',
                      y = 'Sequence',
@@ -188,7 +191,7 @@ shinyApp(
                 ggplot() + 
                 geom_segment(aes(x = x, y = y, xend = xend, yend = yend),
                              color = ggd1$segments$col, linetype = ggd1$segments$linetype,
-                             lwd = 0.6, alpha = 0.7) +
+                             lwd = 0.9, alpha = 0.7) +
                 scale_x_continuous(labels = NULL) +
                 scale_y_continuous(labels = scales::comma_format()) +
                 labs(title = "Dendrogram of edit distance with Ward (D2) linkage",
@@ -218,6 +221,11 @@ shinyApp(
             updateSelectInput(session = session,
                               inputId = 'clustering_slider_n_clusters',
                               selected = store$s_width$Best.nc[['Number_clusters']])
+            
+            # move user to silhouette plot tab
+            updateTabsetPanel(session = session, 
+                              inputId = "clustering_tabs", 
+                              selected = "Silhouette plot")
         })
         
         # plot the silhouette width
@@ -258,7 +266,7 @@ shinyApp(
                 )
             
             # plot it
-            tibble(cluster = cluster_assignments,
+            p <- tibble(cluster = cluster_assignments,
                    sequenchr_seq_id = 1:length(cluster_assignments)) %>% 
                 right_join(store$tidy_data, by = 'sequenchr_seq_id') %>% 
                 group_by(sequenchr_seq_id) %>% 
@@ -273,15 +281,48 @@ shinyApp(
                      x = 'Period',
                      y = 'Sequence',
                      fill = NULL)
+            
+            return(p)
         })
         
 
     # explore -----------------------------------------------------------------
 
-        output$d3 <- renderD3({
-            r2d3(data = runif(5, 0, input$bar_max),
-                 script = system.file("examples/baranims.js", package = "r2d3")
-            )
+        # # render the d3 plot
+        # output$explore_d3_chord <- renderD3({
+        #     # r2d3(data = runif(5, 0, input$bar_max),
+        #     #      script = file.path('d3_plots', 'chord.js')
+        #     r2d3(data = matrix(round(runif(input$bar_max, 1, 10000)), 
+        #                        ncol = 4, nrow = 4), 
+        #          script = file.path('d3_plots', 'chord.js'))
+        # })
+        
+        # render the chord plot
+        output$explore_plot_chord <- renderChorddiag({
+            
+            # add NA filler rows after each group before calculating transition matrix
+            # this prevents end of day looping back to beginning of day for next group
+            freq_data <- store$tidy_data %>% 
+                mutate(value = as.character(value)) %>% 
+                group_by(sequenchr_seq_id) %>% 
+                group_split() %>% 
+                map_dfr(.f = function(df){
+                    df %>% add_row(sequenchr_seq_id = NA, value = NA, period = NA)
+                })
+            
+            # calculate transition matrix
+            n <- nrow(freq_data)  
+            TRATE_mat <- table(tibble(previous = freq_data$value[1:(n-1)],
+                                      current = freq_data$value[2:n]))
+            TRATE_mat <- TRATE_mat / sum(TRATE_mat)
+            
+            # plot the chord diagram
+            p <- chorddiag(data = TRATE_mat, 
+                           groupColors = as.vector(color_mapping), 
+                           groupnamePadding = 20,
+                           groupnameFontsize = 12)
+            
+            return(p)
         })
         
     }

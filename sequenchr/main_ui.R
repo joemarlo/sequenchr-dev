@@ -9,13 +9,14 @@ main_UI <- fluidPage(
     # useShinyjs(),
     
     # load custom CSS file
-    includeCSS("www/custom_css.css"),
+    includeCSS(file.path("www", "custom_css.css")),
+    includeCSS(file.path("www", "d3_css.css")),
     
     # set top left title
-    titlePanel(
-      title = h2("sequenchr"),
-      windowTitle = "sequenchr"
-    ),
+    # titlePanel(
+    #   title = h2("sequenchr"),
+    #   windowTitle = "sequenchr"
+    # ),
     
     # set main navigation
     # TODO: redesign UI so more like shinystan

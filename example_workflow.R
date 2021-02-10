@@ -21,44 +21,48 @@ launch_sequenchr(mvad.seq)
 # library(NbClust)
 # library(dendextend)
 # source("Plots/ggplot_settings.R")
-set.seed(44)
+# set.seed(44)
 
 # read in ATUS data
-atus_raw <- read_tsv("example_data/atus.tsv")
+# atus_raw <- read_tsv("example_data/atus.tsv")
+# 
+# # read in the demographics data
+# demographics <- read_delim(file = "example_data/demographic.tsv",
+#                            delim = "\t",
+#                            escape_double = FALSE,
+#                            trim_ws = TRUE)
+# 
+# 
+# # filter to only include respondents who logged on weekdays and non holidays
+# IDs <- demographics %>% 
+#   filter(day_of_week %in% 2:6,
+#          holiday == 0) %>% 
+#   dplyr::select(ID, survey_weight)
+# 
+# # filter to just include weekends, pivot wider, and sample with weights
+# n_sample <- 1000
+# atus_sampled <- atus_raw %>% 
+#   pivot_wider(values_from = description, names_from = period, names_prefix = "p_") %>% 
+#   right_join(IDs, by = "ID") %>% 
+#   slice_sample(n = n_sample, weight_by = survey_weight) %>% 
+#   dplyr::select(-survey_weight)
+# 
+# readr::write_csv(atus_sampled, 'example_data/atus.csv')
 
-# read in the demographics data
-demographics <- read_delim(file = "example_data/demographic.tsv",
-                           delim = "\t",
-                           escape_double = FALSE,
-                           trim_ws = TRUE)
-
-
-# filter to only include respondents who logged on weekdays and non holidays
-IDs <- demographics %>% 
-  filter(day_of_week %in% 2:6,
-         holiday == 0) %>% 
-  dplyr::select(ID, survey_weight)
-
-# filter to just include weekends, pivot wider, and sample with weights
-n_sample <- 1000
-atus_sampled <- atus_raw %>% 
-  pivot_wider(values_from = description, names_from = period, names_prefix = "p_") %>% 
-  right_join(IDs, by = "ID") %>% 
-  slice_sample(n = n_sample, weight_by = survey_weight) %>% 
-  dplyr::select(-survey_weight)
+atus <- readr::read_csv('example_data/atus.csv')
 
 # define alphabet as all unique states
-alphabet <- atus_sampled[,-1] %>% unlist() %>% unique() %>% sort()
+alphabet <- atus[,-1] %>% unlist() %>% unique() %>% sort()
 # states <- c("CHH")
 labels <- c("Care_HH", "Care_NHH", "Cons_Pur", "Eat_drink", "Edu", 
             "HH_activ", "Other", "Prsl_care", "Care_svcs", "Rel_spirit", 
             "Sleep", "Leisure", "Recreation", "Volunteer", "Work")
 
 # create state sequence object
-atus_seq <- seqdef(data = atus_sampled[, -1], 
+atus_seq <- seqdef(data = atus[, -1], 
                    alphabet = alphabet, 
                    # states = mvad.scodes,
-                   id = atus_sampled$ID,
+                   id = atus$ID,
                    labels = labels,
                    xtstep = 1)
 
@@ -215,7 +219,27 @@ tibble(cluster = cluster_assignments,
 
 
 
+# chord plot --------------------------------------------------------------
 
+library(chorddiag)
+
+# add NA filler rows after each group before calculating transition matrix
+freq_data <- tidy_data %>% 
+  mutate(value = as.character(value)) %>% 
+  group_by(sequenchr_seq_id) %>% 
+  group_split() %>% 
+  map_dfr(.f = function(df){
+    df %>% add_row(sequenchr_seq_id = NA, value = NA, period = NA)
+  })
+
+# transition matrix
+n <- nrow(freq_data)  
+TRATE_mat <- table(tibble(previous = freq_data$value[1:(n-1)],
+             current = freq_data$value[2:n]))
+TRATE_mat <- TRATE_mat / sum(TRATE_mat)
+
+# plot the chord diagram
+chorddiag(TRATE_mat, groupColors = as.vector(color_mapping), groupnamePadding = 20)
 
 # blacklist
 # sequenchr_period

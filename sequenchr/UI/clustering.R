@@ -22,7 +22,10 @@ UI_clustering <- tabPanel(
                   value = 1),
       br(),
       actionButton(inputId = 'clustering_button_silhouette',
-                   label = 'Calculate silhouette width')
+                   label = 'Calculate silhouette width'),
+      br(), br(),
+      actionButton(inputId = 'clustering_button_download',
+                   label = 'Download cluster assignments')
     ),
     mainPanel(
       width = 8,
