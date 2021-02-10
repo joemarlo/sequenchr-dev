@@ -1,10 +1,6 @@
 require(tidyverse)
-# require(DT)
-# require(shinyBS)
 require(shiny)
-# library(shinythemes)
 library(shinyWidgets) # for slider skin
-library(arm) # currently just for lalonde dataset
 library(viridis) # for color blind sensitive colors
 library(TraMineR)
 library(dendextend) # for dendroram
@@ -16,7 +12,7 @@ theme_set(theme_minimal())
 setwd("sequenchr")
 
 # load UI
-map(list.files('UI'), function(file) source(file.path("UI", file))) # TODO: is there a do this w/o global vars?
+# map(list.files('UI'), function(file) source(file.path("UI", file))) # TODO: is there a do this w/o global vars?
 source('main_ui.R', local = TRUE)
 
 # set default object if one doesn't exist
@@ -27,7 +23,7 @@ sequence_data <- getShinyOption("sequence_data", sequence_data_default)
 
 
 shinyApp(
-    ui = main_UI,
+    ui = UI,
     server = function(input, output, session){
         
         # set and reset working directory
@@ -55,10 +51,12 @@ shinyApp(
         # summary table
         output$summary_table <- renderText({
             data.frame(
-                'n sequences' = nrow(sequence_data),
-                'n unique sequences' = nrow(distinct(as.data.frame(sequence_data)))
+                n_sequences = nrow(sequence_data),
+                n_unique_sequences = nrow(distinct(as.data.frame(sequence_data))),
+                n_periods = ncol(sequence_data)
             ) %>% 
                 t() %>% 
+                `rownames<-`(c('n sequences', 'n unique sequences', 'n periods')) %>% 
                 knitr::kable(digits = 2, format = 'html') %>% 
                 kableExtra::kable_styling(bootstrap_options = c("hover", "condensed"))
         })
@@ -85,26 +83,14 @@ shinyApp(
                          y = 'Sequence',
                          fill = NULL)
             } else {
-                # stop here if clustering hasn't been run yet
-                validate(need(is(store$cluster, 'hclust'),
-                              'Cluster the data first'))
-                
-                # get the cluster assignments and clean up
-                hcl_k <- input$clustering_slider_n_clusters
-                cluster_assignments <- cutree(store$cluster, k = hcl_k)
-                cluster_ns <- table(cluster_assignments)
-                cluster_assignments <- factor(
-                    cluster_assignments, 
-                    labels = paste("Cluster", 1:hcl_k, " | n = ", cluster_ns)
-                )
                 
                 # plot the sequences with clusters
-                p <- tibble(cluster = cluster_assignments,
-                            sequenchr_seq_id = 1:length(cluster_assignments)) %>% 
-                    right_join(store$tidy_data, by = 'sequenchr_seq_id') %>% 
-                    group_by(sequenchr_seq_id) %>% 
+                p <- tibble(cluster = cluster_assignments(),
+                            sequenchr_seq_id = 1:length(cluster_assignments())) %>%
+                    right_join(store$tidy_data, by = 'sequenchr_seq_id') %>%
+                    group_by(sequenchr_seq_id) %>%
                     mutate(entropy = DescTools::Entropy(table(value))) %>%
-                    ungroup() %>% 
+                    ungroup() %>%
                     ggplot(aes(x = period, y = reorder(sequenchr_seq_id, entropy), fill = value)) +
                     geom_tile() +
                     scale_fill_manual(values = color_mapping) +
@@ -119,30 +105,41 @@ shinyApp(
             return(p)
         })
         
-        # render the top 10 most commmon sequences
+        # render the top 10 most common sequences
         # should show frequency of sequence somehow
         output$plotting_plot_common <- renderPlot({
-            store$tidy_data %>% 
-                group_by(sequenchr_seq_id) %>% 
-                summarize(seq_collapsed = paste0(value, collapse = 'SE3P'),
-                          .groups = 'drop') %>% 
-                count(seq_collapsed) %>% 
-                arrange(desc(n)) %>%
-                slice_head(n = 10) %>% 
-                separate(seq_collapsed, into = paste0('p', 1:48), sep = "SE3P") %>% 
-                mutate(sequenchr_seq_id = row_number()) %>%
-                pivot_longer(cols = setdiff(colnames(.), c('n', "sequenchr_seq_id"))) %>% 
-                mutate(name = as.numeric(stringr::str_remove(name, 'p'))) %>% 
-                rename(period = name) %>% 
-                ggplot(aes(x = period, y = sequenchr_seq_id, fill = value)) +
-                geom_tile() +
-                scale_fill_manual(values = color_mapping) +
-                scale_y_continuous(breaks = 1:10) +
-                labs(title = "Top 10 most common sequences",
-                     x = 'Period',
-                     y = 'Sequence (ranked)',
-                     fill = NULL)
-        })  
+            
+            # if (isFALSE(input$plotting_check_cluster)){
+            
+                # plot without clustering
+                p <- store$tidy_data %>% 
+                    group_by(sequenchr_seq_id) %>% 
+                    summarize(seq_collapsed = paste0(value, collapse = 'SE3P'),
+                              .groups = 'drop') %>% 
+                    count(seq_collapsed) %>% 
+                    arrange(desc(n)) %>%
+                    slice_head(n = 10) %>% 
+                    separate(seq_collapsed, into = paste0('p', 1:48), sep = "SE3P") %>% 
+                    mutate(sequenchr_seq_id = row_number()) %>%
+                    pivot_longer(cols = setdiff(colnames(.), c('n', "sequenchr_seq_id"))) %>% 
+                    mutate(name = as.numeric(stringr::str_remove(name, 'p'))) %>% 
+                    rename(period = name) %>% 
+                    ggplot(aes(x = period, y = sequenchr_seq_id, fill = value)) +
+                    geom_tile() +
+                    scale_fill_manual(values = color_mapping) +
+                    scale_y_continuous(breaks = 1:10) +
+                    labs(title = "Top 10 most common sequences",
+                         x = 'Period',
+                         y = 'Sequence (ranked)',
+                         fill = NULL)
+            # } else {
+            #     # plot with clustering
+            #     p <- store$tidy_data %>%
+            # 
+            # }
+            
+            return(p)
+        }) 
         
         # plot of just the legend colors
         output$plotting_plot_legend <- renderPlot({
@@ -158,29 +155,73 @@ shinyApp(
         
         # state distribution plot
         output$plotting_plot_state <- renderPlot({
-            store$tidy_data %>% 
-                ggplot(aes(x = period, fill = value)) +
-                geom_bar(width = 1) +
-                scale_fill_manual(values = color_mapping) +
-                labs(title = "State distributions",
-                     x = 'Period',
-                     y = 'Frequency',
-                     fill = NULL)
+            
+            if (isFALSE(input$plotting_check_cluster)){
+                
+                # plot without clustering
+                p <- store$tidy_data %>% 
+                    ggplot(aes(x = period, fill = value)) +
+                    geom_bar(width = 1) +
+                    scale_fill_manual(values = color_mapping) +
+                    labs(title = "State distributions",
+                         x = 'Period',
+                         y = 'Frequency',
+                         fill = NULL)
+            } else {
+                
+                # plot with clustering
+                p <- tibble(cluster = cluster_assignments(),
+                            sequenchr_seq_id = 1:length(cluster_assignments())) %>%
+                    right_join(store$tidy_data, by = 'sequenchr_seq_id') %>% 
+                    ggplot(aes(x = period, fill = value)) +
+                    geom_bar(width = 1) +
+                    scale_fill_manual(values = color_mapping) +
+                    facet_wrap(~cluster, scales = 'free_y') +
+                    labs(title = "State distributions",
+                         x = 'Period',
+                         y = 'Frequency',
+                         fill = NULL)
+            }
+            
+            return(p)
         })
         
         # modal plot
         output$plotting_plot_modal <- renderPlot({
-            store$tidy_data %>% 
-                count(value, period) %>% 
-                group_by(period) %>% 
-                filter(n == max(n)) %>% 
-                ggplot(aes(x = period, y = n, fill = value)) +
-                geom_col() +
-                scale_fill_manual(values = color_mapping) +
-                labs(title = "Modal activity per period",
-                     x = "Period",
-                     y = 'Frequency',
-                     fill = NULL)  
+            
+            if (isFALSE(input$plotting_check_cluster)){
+                
+                # plot without clustering
+                p <- store$tidy_data %>% 
+                    count(value, period) %>% 
+                    group_by(period) %>% 
+                    filter(n == max(n)) %>% 
+                    ggplot(aes(x = period, y = n, fill = value)) +
+                    geom_col() +
+                    scale_fill_manual(values = color_mapping) +
+                    labs(title = "Modal activity per period",
+                         x = "Period",
+                         y = 'Frequency',
+                         fill = NULL)
+            } else {
+                # plot with cluster
+                p <- tibble(cluster = cluster_assignments(),
+                            sequenchr_seq_id = 1:length(cluster_assignments())) %>%
+                    right_join(store$tidy_data, by = 'sequenchr_seq_id') %>% 
+                    count(cluster, value, period) %>% 
+                    group_by(cluster, period) %>% 
+                    filter(n == max(n)) %>% 
+                    ggplot(aes(x = period, y = n, fill = value)) +
+                    geom_col() +
+                    scale_fill_manual(values = color_mapping) +
+                    facet_wrap(~cluster, scales = 'free_y') +
+                    labs(title = "Modal activity per period",
+                         x = "Period",
+                         y = 'Frequency',
+                         fill = NULL)
+            }
+            
+            return(p)
         })
         
 
@@ -190,7 +231,7 @@ shinyApp(
         observeEvent(input$clustering_button_cluster, {
           
             # compute optimal matching distances
-            store$dist_matrix <- seqdist(atus_seq, method = "OM", indel = 1, sm = "TRATE")
+            store$dist_matrix <- seqdist(sequence_data, method = "OM", indel = 1, sm = "TRATE")
             # dist_om_DHD <- seqdist(atus_seq, method = "DHD")
             
             # cluster the data
@@ -211,23 +252,26 @@ shinyApp(
                                height = 500)
                 )
             )
-            
-            # add cluster assignments to the tidy data
-            # hcl_k <- input$clustering_slider_n_clusters
-            # cluster_assignments <- cutree(store$cluster, k = hcl_k)
-            # cluster_ns <- table(cluster_assignments)
-            # cluster_assignments <- factor(
-            #     cluster_assignments, 
-            #     labels = paste("Cluster", 1:hcl_k, " | n = ", cluster_ns)
-            # )
-            # 
-            # # plot the sequences with clusters
-            # store$tidy_data <- tibble(cluster = cluster_assignments,
-            #             sequenchr_seq_id = 1:length(cluster_assignments)) %>% 
-            #     right_join(store$tidy_data, by = 'sequenchr_seq_id') 
-            
         })
         
+        # returns the current cluster assignments
+        cluster_assignments <- reactive({
+            # stop here if clustering hasn't been run yet
+            validate(need(is(store$cluster, 'hclust'),
+                          'Cluster the data first'))
+            
+            # get the cluster assignments and clean up
+            hcl_k <- input$clustering_slider_n_clusters
+            cluster_assignments <- cutree(store$cluster, k = hcl_k)
+            cluster_ns <- table(cluster_assignments)
+            cluster_assignments <- factor(
+                cluster_assignments,
+                labels = paste("Cluster", 1:hcl_k, " | n = ", cluster_ns)
+            )
+            
+            return(cluster_assignments)
+        })
+
         # plot the dendrogram
         output$clustering_plot_dendrogram <- renderPlot({
             
@@ -235,7 +279,7 @@ shinyApp(
             validate(need(is(store$cluster, 'hclust'),
                           'Cluster the data first'))
             
-            
+            # retrieve the current cluster model and k cluster value
             hcl_ward <- store$cluster
             hcl_k <- input$clustering_slider_n_clusters
             
@@ -244,7 +288,7 @@ shinyApp(
             
             # cut off bottom of dendogram for computation performance
             # TODO: need a reactive way to do this
-            dend <- cut(dend, h = 50)$upper
+            dend <- cut(dend, h = input$clustering_slider_dendrogram_depth)$upper
             ggd1 <- as.ggdend(dend)
             
             # set dashed line for non-cluster segments
@@ -363,7 +407,8 @@ shinyApp(
             p <- chorddiag(data = TRATE_mat, 
                            groupColors = as.vector(color_mapping), 
                            groupnamePadding = 20,
-                           groupnameFontsize = 12)
+                           groupnameFontsize = 12,
+                           precision = 4)
             
             return(p)
         })

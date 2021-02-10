@@ -435,3 +435,7 @@ border 0 fixes the buttons moving around when you hover / click */
   margin-right: auto;
   object-fit: cover;
 }
+
+#logo {
+  margin-top: 0rem;
+}

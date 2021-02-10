@@ -34,19 +34,19 @@ launch_sequenchr(mvad.seq)
 # 
 # 
 # # filter to only include respondents who logged on weekdays and non holidays
-# IDs <- demographics %>% 
+# IDs <- demographics %>%
 #   filter(day_of_week %in% 2:6,
-#          holiday == 0) %>% 
+#          holiday == 0) %>%
 #   dplyr::select(ID, survey_weight)
 # 
 # # filter to just include weekends, pivot wider, and sample with weights
 # n_sample <- 1000
-# atus_sampled <- atus_raw %>% 
-#   pivot_wider(values_from = description, names_from = period, names_prefix = "p_") %>% 
-#   right_join(IDs, by = "ID") %>% 
-#   slice_sample(n = n_sample, weight_by = survey_weight) %>% 
+# atus_sampled <- atus_raw %>%
+#   pivot_wider(values_from = description, names_from = period, names_prefix = "p_") %>%
+#   right_join(IDs, by = "ID") %>%
+#   slice_sample(n = n_sample, weight_by = survey_weight) %>%
 #   dplyr::select(-survey_weight)
-# 
+
 # readr::write_csv(atus_sampled, 'example_data/atus.csv')
 
 atus <- readr::read_csv('example_data/atus.csv')
@@ -240,6 +240,40 @@ TRATE_mat <- TRATE_mat / sum(TRATE_mat)
 
 # plot the chord diagram
 chorddiag(TRATE_mat, groupColors = as.vector(color_mapping), groupnamePadding = 20)
+
+
+
+# other -------------------------------------------------------------------
+
+tidy_data %>%  
+  left_join(tibble(cluster = cluster_assignments,
+                   sequenchr_seq_id = 1:length(cluster_assignments)),
+            by = 'sequenchr_seq_id') %>%
+  group_by(sequenchr_seq_id, cluster) %>% 
+  summarize(seq_collapsed = paste0(value, collapse = 'SE3P'),
+            .groups = 'drop') %>% 
+  count(seq_collapsed, cluster) %>% 
+  group_by(cluster) %>% 
+  arrange(desc(n)) %>%
+  slice_head(n = 10) %>% 
+  separate(seq_collapsed, into = paste0('p', 1:48), sep = "SE3P") %>% 
+  mutate(id = row_number()) %>%
+  pivot_longer(cols = setdiff(colnames(.), c('n', "id"))) %>% 
+  mutate(name = as.numeric(stringr::str_remove(name, 'p'))) %>% 
+  rename(period = name) %>% 
+  group_by(sequenchr_seq_id) %>%
+  mutate(entropy = DescTools::Entropy(table(value))) %>%
+  ungroup() %>%
+  ggplot(aes(x = period, y = reorder(sequenchr_seq_id, entropy), fill = value)) +
+  # ggplot(aes(x = period, y = sequenchr_seq_id, fill = value)) +
+  geom_tile() +
+  scale_fill_manual(values = color_mapping) +
+  scale_y_discrete(breaks = 1:10) +
+  facet_wrap(~cluster, scale = 'free_y') +
+  labs(title = "Top 10 most common sequences",
+       x = 'Period',
+       y = 'Sequence (ranked)',
+       fill = NULL)
 
 # blacklist
 # sequenchr_period
