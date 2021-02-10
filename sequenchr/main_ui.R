@@ -23,6 +23,7 @@ main_UI <- fluidPage(
       id = "nav",
       title = 'sequenchr',
       UI_plotting,
-      UI_clustering
+      UI_clustering,
+      UI_explore
     )
   )

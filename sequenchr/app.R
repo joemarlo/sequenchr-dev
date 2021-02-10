@@ -7,6 +7,7 @@ library(shinyWidgets) # for slider skin
 library(arm) # currently just for lalonde dataset
 library(viridis) # for color blind sensitive colors
 library(dendextend) # for dendroram
+library(r2d3) # for explore
 theme_set(theme_minimal())
 
 # this shouldn't be necessary but is currently required
@@ -21,6 +22,7 @@ source('main_ui.R', local = TRUE)
 appDir <- getwd()
 sequence_data_default <- mtcars
 sequence_data <- getShinyOption("sequence_data", sequence_data_default)
+
 
 shinyApp(
     ui = main_UI,
@@ -45,7 +47,8 @@ shinyApp(
             setNames(1:ncol(sequence_data)) %>% 
             mutate(sequenchr_seq_id = row_number()) %>%
             pivot_longer(cols = setdiff(colnames(.), "sequenchr_seq_id")) %>% 
-            mutate(period = as.numeric(name))
+            mutate(period = as.numeric(name)) %>% 
+            dplyr::select(-name)
         
         # summary table
         output$summary_table <- renderText({
@@ -64,10 +67,13 @@ shinyApp(
         # render the sequence plot
         output$plotting_plot_sequence <- renderPlot({
             store$tidy_data %>% 
+                group_by(sequenchr_seq_id) %>% 
+                mutate(entropy = DescTools::Entropy(table(value))) %>%
+                ungroup() %>% 
                 ggplot(aes(x = period, y = sequenchr_seq_id, fill = value)) +
                 geom_tile() +
                 scale_fill_manual(values = color_mapping) +
-                labs(title = "All sequences sorted",
+                labs(title = "All sequences sorted by entropy",
                      x = 'Period',
                      y = 'Sequence',
                      fill = NULL)
@@ -186,9 +192,7 @@ shinyApp(
                 scale_x_continuous(labels = NULL) +
                 scale_y_continuous(labels = scales::comma_format()) +
                 labs(title = "Dendrogram of edit distance with Ward (D2) linkage",
-                     subtitle = paste0("Weighted sample of ", 
-                                       scales::comma_format()(n_sample),
-                                       " respondents"),
+                     subtitle = 'Helpful subtitle goes here',
                      x = NULL,
                      y = NULL) +
                 theme(axis.ticks = element_blank(),
@@ -209,6 +213,11 @@ shinyApp(
                 min.nc = 2,
                 index = 'silhouette'
             )
+            
+            # update slider with best k value
+            updateSelectInput(session = session,
+                              inputId = 'clustering_slider_n_clusters',
+                              selected = store$s_width$Best.nc[['Number_clusters']])
         })
         
         # plot the silhouette width
@@ -231,5 +240,49 @@ shinyApp(
                      x = 'n clusters',
                      y = 'Silhouette width') 
         })
+        
+        # plot  the sequences by cluster
+        output$clustering_plot_sequence <- renderPlot({
+            
+            # stop here if clustering hasn't been run yet
+            validate(need(is(store$cluster, 'hclust'),
+                          'Cluster the data first'))
+            
+            # get the cluster assignments and clean up
+            hcl_k <- input$clustering_slider_n_clusters
+            cluster_assignments <- cutree(store$cluster, k = hcl_k)
+            cluster_ns <- table(cluster_assignments)
+            cluster_assignments <- factor(
+                cluster_assignments, 
+                labels = paste("Cluster", 1:hcl_k, " | n = ", cluster_ns)
+                )
+            
+            # plot it
+            tibble(cluster = cluster_assignments,
+                   sequenchr_seq_id = 1:length(cluster_assignments)) %>% 
+                right_join(store$tidy_data, by = 'sequenchr_seq_id') %>% 
+                group_by(sequenchr_seq_id) %>% 
+                mutate(entropy = DescTools::Entropy(table(value))) %>%
+                ungroup() %>% 
+                ggplot(aes(x = period, y = reorder(sequenchr_seq_id, entropy), fill = value)) +
+                geom_tile() +
+                scale_fill_manual(values = color_mapping) +
+                scale_y_discrete(labels = NULL) +
+                facet_wrap(~cluster, scales = 'free_y') +
+                labs(title = "All sequences by cluster",
+                     x = 'Period',
+                     y = 'Sequence',
+                     fill = NULL)
+        })
+        
+
+    # explore -----------------------------------------------------------------
+
+        output$d3 <- renderD3({
+            r2d3(data = runif(5, 0, input$bar_max),
+                 script = system.file("examples/baranims.js", package = "r2d3")
+            )
+        })
+        
     }
 )

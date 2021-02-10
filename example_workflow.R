@@ -66,7 +66,6 @@ atus_seq <- seqdef(data = atus_sampled[, -1],
 launch_sequenchr(atus_seq)
 
 
-
 # scratch work ------------------------------------------------------------
 
 tidy_data <- atus_seq %>%
@@ -74,7 +73,11 @@ tidy_data <- atus_seq %>%
   setNames(1:ncol(atus_seq)) %>% 
   mutate(sequenchr_seq_id = row_number()) %>%
   pivot_longer(cols = setdiff(colnames(.), "sequenchr_seq_id")) %>% 
-  mutate(period = as.numeric(name))
+  mutate(period = as.numeric(name)) %>% 
+  dplyr::select(-name)
+
+color_mapping <- viridis::viridis_pal()(length(alphabet(atus_seq)))
+names(color_mapping) <- alphabet(atus_seq)
 
 tidy_data %>% 
   ggplot(aes(x = period, y = sequenchr_seq_id, fill = value)) +
@@ -97,9 +100,6 @@ tidy_data %>%
   geom_tile() +
   scale_fill_manual(values = color_mapping)
 
-
-color_mapping <- viridis::viridis_pal()(length(alphabet(atus_seq)))
-names(color_mapping) <- alphabet(atus_seq)
 
 tidy_data %>% 
   # count(value, period) %>% 
@@ -195,8 +195,27 @@ ggd1$segments %>%
 
 # sequence plots ----------------------------------------------------------
 
-cluster_6 <- cutree(clusters, k = hcl_k)
-cluster_6 <- factor(cluster_6, labels = paste("Cluster", 1:hcl_k))
+cluster_assignments <- cutree(clusters, k = hcl_k)
+cluster_ns <- table(cluster_assignments)
+cluster_assignments <- factor(cluster_assignments, 
+                              labels = paste("Cluster", 1:hcl_k, " | n = ", cluster_ns))
+
+tibble(cluster = cluster_assignments,
+       sequenchr_seq_id = 1:length(cluster_assignments)) %>% 
+  right_join(tidy_data, by = 'sequenchr_seq_id') %>% 
+  group_by(sequenchr_seq_id) %>% 
+  mutate(entropy = DescTools::Entropy(table(value))) %>%
+  ungroup() %>% 
+  ggplot(aes(x = period, y = reorder(sequenchr_seq_id, entropy), fill = value)) +
+  # ggplot(aes(x = period, y = sequenchr_seq_id, fill = value)) +
+  geom_tile() +
+  scale_fill_manual(values = color_mapping) +
+  scale_y_discrete(labels = NULL) +
+  facet_wrap(~cluster, scales = 'free_y')
+
+
+
+
 
 # blacklist
 # sequenchr_period
