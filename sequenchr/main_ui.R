@@ -2,17 +2,13 @@ UI <- fluidPage(
     # download roboto font
   HTML('<link rel="preconnect" href="https://fonts.gstatic.com">'),
   HTML('<link rel="stylesheet" href="//fonts.googleapis.com/css?family=Roboto:400,300,700,400italic">'),
-  HTML('<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Monoton&display=swap">'),
-  HTML('<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron&display=swap">'),
+  # HTML('<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Monoton&display=swap">'),
+  # HTML('<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron&display=swap">'),
   HTML('<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Libre+Barcode+128+Text&display=swap">'),
-  
-  
-  # set default slider skin
-  chooseSliderSkin(skin = "Flat", color = "#221146"),
-  
+
   # load custom CSS file
   includeCSS(file.path("www", "custom_css.css")),
-  includeCSS(file.path("www", "d3_css.css")),
+  # includeCSS(file.path("www", "d3_css.css")),
   
   # set top left title
   titlePanel(
@@ -52,7 +48,8 @@ UI <- fluidPage(
                       min = 2,
                       max = 10,
                       step = 1,
-                      value = 1),
+                      value = 1,
+                      ticks = FALSE),
           br(),
           actionButton(inputId = 'clustering_button_silhouette',
                        label = 'Calculate silhouette width')
@@ -74,7 +71,8 @@ UI <- fluidPage(
                     min = 0,
                     max = 500,
                     step = 5,
-                    value = 50),
+                    value = 50,
+                    ticks = FALSE),
         br(),
         uiOutput(outputId = 'clustering_button_UI'),
         HTML('</details><br>')

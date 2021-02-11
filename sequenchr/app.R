@@ -1,14 +1,10 @@
-# require(tidyverse)
 library(dplyr)
 library(tidyr)
-library(purrr)
 library(ggplot2)
 library(shiny)
-library(shinyWidgets) # for slider skin
 library(viridis) # for color blind sensitive colors
 library(TraMineR)
-library(dendextend) # for dendroram
-# library(r2d3) # for explore
+library(dendextend) # for dendrogram
 library(chorddiag) # for chord plot
 theme_set(theme_minimal())
 
@@ -462,9 +458,10 @@ shinyApp(
                 mutate(value = as.character(value)) %>% 
                 group_by(sequenchr_seq_id) %>% 
                 group_split() %>% 
-                map_dfr(.f = function(df){
+                lapply(X = ., FUN = function(df){
                     df %>% add_row(sequenchr_seq_id = NA, value = NA, period = NA)
-                })
+                }) %>% 
+                bind_rows()
             
             # calculate transition matrix
             n <- nrow(freq_data)  
