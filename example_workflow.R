@@ -1,4 +1,3 @@
-### ideal workflow
 source('launch_sequenchr.R')
 library(TraMineR)
 data(mvad)
@@ -15,44 +14,12 @@ mvad.seq <- seqdef(mvad, 17:86, alphabet = mvad.alphabet, states = mvad.scodes,
 launch_sequenchr(mvad.seq)
 
 
-# library(tidyverse)
-# library(TraMineR)
-# library(fastcluster)
-# library(NbClust)
-# library(dendextend)
-# source("Plots/ggplot_settings.R")
-# set.seed(44)
-
-# read in ATUS data
-# atus_raw <- read_tsv("example_data/atus.tsv")
-# 
-# # read in the demographics data
-# demographics <- read_delim(file = "example_data/demographic.tsv",
-#                            delim = "\t",
-#                            escape_double = FALSE,
-#                            trim_ws = TRUE)
-# 
-# 
-# # filter to only include respondents who logged on weekdays and non holidays
-# IDs <- demographics %>%
-#   filter(day_of_week %in% 2:6,
-#          holiday == 0) %>%
-#   dplyr::select(ID, survey_weight)
-# 
-# # filter to just include weekends, pivot wider, and sample with weights
-# n_sample <- 1000
-# atus_sampled <- atus_raw %>%
-#   pivot_wider(values_from = description, names_from = period, names_prefix = "p_") %>%
-#   right_join(IDs, by = "ID") %>%
-#   slice_sample(n = n_sample, weight_by = survey_weight) %>%
-#   dplyr::select(-survey_weight)
-
-# readr::write_csv(atus_sampled, 'example_data/atus.csv')
+# atus --------------------------------------------------------------------
 
 atus <- readr::read_csv('example_data/atus.csv')
 
 # define alphabet as all unique states
-alphabet <- atus[,-1] %>% unlist() %>% unique() %>% sort()
+alphabet <- sort(unique(unlist(atus[,-1])))
 # states <- c("CHH")
 labels <- c("Care_HH", "Care_NHH", "Cons_Pur", "Eat_drink", "Edu", 
             "HH_activ", "Other", "Prsl_care", "Care_svcs", "Rel_spirit", 
@@ -98,11 +65,32 @@ tidy_data %>%
   separate(seq_collapsed, into = paste0('p', 1:48), sep = "SE3P") %>% 
   mutate(sequenchr_seq_id = row_number()) %>%
   pivot_longer(cols = setdiff(colnames(.), c('n', "sequenchr_seq_id"))) %>% 
-  mutate(name = as.numeric(stringr::str_remove(name, 'p'))) %>% 
+  mutate(name = as.numeric(gsub('p', '', name))) %>% 
   rename(period = name) %>% 
   ggplot(aes(x = period, y = sequenchr_seq_id, fill = value)) +
   geom_tile() +
   scale_fill_manual(values = color_mapping)
+
+tidy_data %>% 
+  left_join(data.frame(cluster = sub("  \\|.*", "", cluster_assignments), 
+                       sequenchr_seq_id = 1:length(cluster_assignments))) %>% 
+  group_by(sequenchr_seq_id, cluster) %>% 
+  summarize(seq_collapsed = paste0(value, collapse = 'SE3P'),
+            .groups = 'drop') %>% 
+  count(cluster, seq_collapsed) %>%
+  group_by(cluster) %>% 
+  arrange(desc(n)) %>%
+  slice_head(n = 10) %>% 
+  ungroup() %>% 
+  separate(seq_collapsed, into = paste0('p', 1:48), sep = "SE3P") %>% 
+  mutate(id = row_number()) %>%
+  pivot_longer(cols = setdiff(colnames(.), c('n', "id", 'cluster'))) %>% 
+  mutate(name = as.numeric(gsub('p', '', name))) %>% 
+  rename(period = name) %>%
+  ggplot(aes(x = period, y = id, fill = value)) +
+  geom_tile() +
+  scale_fill_manual(values = color_mapping) +
+  facet_wrap(~cluster, scales = 'free_y')
 
 
 tidy_data %>% 
@@ -146,9 +134,15 @@ s_width <- NbClust::NbClust(
   index = 'silhouette'
 )
 
+widths <- as.data.frame(s_width$All.index)
+widths$name <- rownames(widths)
+  
+
 # plot the silhouette width
 s_width$All.index %>% 
-  enframe() %>% 
+  tibble::enframe() %>% 
+  widths %>% 
+  rename(value = `s_width$All.index`) %>% 
   mutate(name = as.numeric(name)) %>% 
   ggplot(aes(x = name, y = value)) +
   geom_line(color = 'grey30') +

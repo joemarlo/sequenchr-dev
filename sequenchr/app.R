@@ -1,5 +1,9 @@
-require(tidyverse)
-require(shiny)
+# require(tidyverse)
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(ggplot2)
+library(shiny)
 library(shinyWidgets) # for slider skin
 library(viridis) # for color blind sensitive colors
 library(TraMineR)
@@ -106,10 +110,11 @@ shinyApp(
         })
         
         # render the top 10 most common sequences
-        # should show frequency of sequence somehow
+        # TODO: should show frequency of sequence somehow
         output$plotting_plot_common <- renderPlot({
             
-            # if (isFALSE(input$plotting_check_cluster)){
+            
+            if (isFALSE(input$plotting_check_cluster)){
             
                 # plot without clustering
                 p <- store$tidy_data %>% 
@@ -119,10 +124,10 @@ shinyApp(
                     count(seq_collapsed) %>% 
                     arrange(desc(n)) %>%
                     slice_head(n = 10) %>% 
-                    separate(seq_collapsed, into = paste0('p', 1:48), sep = "SE3P") %>% 
+                    separate(seq_collapsed, into = paste0('p', 1:ncol(sequence_data)), sep = "SE3P") %>% 
                     mutate(sequenchr_seq_id = row_number()) %>%
                     pivot_longer(cols = setdiff(colnames(.), c('n', "sequenchr_seq_id"))) %>% 
-                    mutate(name = as.numeric(stringr::str_remove(name, 'p'))) %>% 
+                    mutate(name = as.numeric(gsub('p', '', name))) %>% 
                     rename(period = name) %>% 
                     ggplot(aes(x = period, y = sequenchr_seq_id, fill = value)) +
                     geom_tile() +
@@ -130,13 +135,38 @@ shinyApp(
                     scale_y_continuous(breaks = 1:10) +
                     labs(title = "Top 10 most common sequences",
                          x = 'Period',
-                         y = 'Sequence (ranked)',
+                         y = 'Sequence (ranked by count)',
                          fill = NULL)
-            # } else {
-            #     # plot with clustering
-            #     p <- store$tidy_data %>%
-            # 
-            # }
+            } else {
+                # plot with clustering
+                p <- store$tidy_data %>%
+                    left_join(data.frame(cluster = factor(sub("  \\|.*", "", cluster_assignments()),
+                                                          levels = paste0('Cluster ', 1:length(cluster_assignments()))), 
+                                         sequenchr_seq_id = 1:length(cluster_assignments()))) %>% 
+                    group_by(sequenchr_seq_id, cluster) %>% 
+                    summarize(seq_collapsed = paste0(value, collapse = 'SE3P'),
+                              .groups = 'drop') %>% 
+                    count(cluster, seq_collapsed) %>%
+                    group_by(cluster) %>% 
+                    arrange(desc(n)) %>%
+                    slice_head(n = 10) %>% 
+                    ungroup() %>% 
+                    separate(seq_collapsed, into = paste0('p', 1:ncol(sequence_data)), sep = "SE3P") %>% 
+                    mutate(id = row_number()) %>%
+                    pivot_longer(cols = setdiff(colnames(.), c('n', "id", 'cluster'))) %>% 
+                    mutate(name = as.numeric(gsub('p', '', name))) %>% 
+                    rename(period = name) %>%
+                    ggplot(aes(x = period, y = id, fill = value)) +
+                    geom_tile() +
+                    scale_fill_manual(values = color_mapping) +
+                    scale_y_continuous(breaks = 1:10) +
+                    facet_wrap(~cluster, scales = 'free_y') +
+                    labs(title = "Top 10 most common sequences by cluster",
+                         x = 'Period',
+                         y = 'Sequence (ranked by count)',
+                         fill = NULL)
+
+            }
             
             return(p)
         }) 
@@ -200,6 +230,7 @@ shinyApp(
                     geom_col() +
                     scale_fill_manual(values = color_mapping) +
                     labs(title = "Modal activity per period",
+                         caption = "Ties are show as stacked bars",
                          x = "Period",
                          y = 'Frequency',
                          fill = NULL)
@@ -216,6 +247,7 @@ shinyApp(
                     scale_fill_manual(values = color_mapping) +
                     facet_wrap(~cluster, scales = 'free_y') +
                     labs(title = "Modal activity per period",
+                         caption = "Ties are show as stacked bars",
                          x = "Period",
                          y = 'Frequency',
                          fill = NULL)
@@ -235,7 +267,10 @@ shinyApp(
             # dist_om_DHD <- seqdist(atus_seq, method = "DHD")
             
             # cluster the data
-            store$cluster <- fastcluster::hclust(as.dist(store$dist_matrix), method = "ward.D2")
+            store$cluster <- fastcluster::hclust(
+                d = as.dist(store$dist_matrix), 
+                method = input$clustering_select_clustering_method
+                )
             
             # remove and add dendrogram tab
             removeTab(inputId = 'plotting_tabs',
@@ -252,10 +287,17 @@ shinyApp(
                                height = 500)
                 )
             )
+            
+            # add the download button
+            output$clustering_button_UI <- renderUI({
+                downloadButton(outputId = 'clustering_button_download',
+                           label = 'Download cluster assignments')
+            })
         })
         
         # returns the current cluster assignments
         cluster_assignments <- reactive({
+            
             # stop here if clustering hasn't been run yet
             validate(need(is(store$cluster, 'hclust'),
                           'Cluster the data first'))
@@ -358,8 +400,13 @@ shinyApp(
             validate(need(is(store$s_width, 'list'),
                           'Calculate the silhouette width first'))
             
-            store$s_width$All.index %>% 
-                enframe() %>% 
+            # enframe
+            widths <- as.data.frame(store$s_width$All.index)
+            widths$name <- rownames(widths)
+            
+            # plot it
+            p <- widths %>% 
+                rename(value = `store$s_width$All.index`) %>% 
                 mutate(name = as.numeric(name)) %>% 
                 ggplot(aes(x = name, y = value)) +
                 geom_line(color = 'grey30') +
@@ -370,7 +417,29 @@ shinyApp(
                      subtitle = 'Greater width is better',
                      x = 'n clusters',
                      y = 'Silhouette width') 
+            
+            return(p)
         })
+        
+        # download the plot on the popup
+        output$clustering_button_download <- downloadHandler(
+            
+            # use plot title as file name but only retain alpha-numeric characters
+            filename <- function() {
+                time <- gsub("-|:| ", "", Sys.time())
+                paste0(time, '_cluster_assignments.csv')
+                }, 
+            
+            # dataframe of clusters to download
+            content <- function(file) {
+                cluster_assignments() %>% 
+                    as.data.frame() %>% 
+                    mutate(row = row_number(),
+                           cluster = sub("  \\|.*", "", `.`)) %>% 
+                    select(-`.`) %>% 
+                write.csv(., file)
+            }
+        )
         
 
     # explore -----------------------------------------------------------------
@@ -399,13 +468,13 @@ shinyApp(
             
             # calculate transition matrix
             n <- nrow(freq_data)  
-            TRATE_mat <- table(tibble(previous = freq_data$value[1:(n-1)],
-                                      current = freq_data$value[2:n]))
+            TRATE_mat <- table(data.frame(previous = freq_data$value[1:(n-1)],
+                                          current = freq_data$value[2:n]))
             TRATE_mat <- TRATE_mat / sum(TRATE_mat)
             
             # plot the chord diagram
             p <- chorddiag(data = TRATE_mat, 
-                           groupColors = as.vector(color_mapping), 
+                           groupColors = as.vector(store$color_mapping), 
                            groupnamePadding = 20,
                            groupnameFontsize = 12,
                            precision = 4)
