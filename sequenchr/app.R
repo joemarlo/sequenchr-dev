@@ -326,7 +326,7 @@ shinyApp(
             cluster_assignments <- cutree(store$cluster, k = hcl_k)
             
             # reorder clusters to match dendrogram left to right
-            cluster_to_dend_mapping <- dplyr::tibble(cluster = cluster_assignments[clusters$order]) %>% 
+            cluster_to_dend_mapping <- dplyr::tibble(cluster = cluster_assignments[store$cluster$order]) %>% 
                 nest(-cluster) %>% 
                 mutate(cluster_dend = row_number()) %>% 
                 unnest(data) %>% 
@@ -394,7 +394,7 @@ shinyApp(
                      x = NULL,
                      y = NULL) +
                 theme(axis.ticks = element_blank(),
-                      axis.text.x = element_text(angle = 35),
+                      axis.text.x = element_text(angle = 35, hjust = 1),
                       panel.grid.major.x = element_blank(),
                       panel.grid.minor.x = element_blank(),
                       legend.position = 'none')

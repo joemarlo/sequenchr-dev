@@ -39,6 +39,7 @@ launch_sequenchr(atus_seq)
 
 # scratch work ------------------------------------------------------------
 
+# atus_seq <- mvad.seq
 tidy_data <- atus_seq %>%
   as_tibble() %>% 
   setNames(1:ncol(atus_seq)) %>% 
@@ -53,7 +54,8 @@ names(color_mapping) <- alphabet(atus_seq)
 tidy_data %>% 
   ggplot(aes(x = period, y = sequenchr_seq_id, fill = value)) +
   geom_tile() +
-  scale_fill_manual(values = color_mapping)
+  scale_fill_manual(values = color_mapping) +
+  scale_y_discrete(labels = NULL, breaks = NULL)
 
 tidy_data %>% 
   group_by(sequenchr_seq_id) %>% 
@@ -157,7 +159,7 @@ s_width$All.index %>%
 # dendrograms -------------------------------------------------------------
 
 hcl_ward <- clusters
-hcl_k <- 7 #s_width$Best.nc[['Number_clusters']] # need a balance of optimal width and enough clusters to be interesting to the user
+hcl_k <- 5 #s_width$Best.nc[['Number_clusters']] # need a balance of optimal width and enough clusters to be interesting to the user
 dend <- as.dendrogram(hcl_ward) %>% 
   dendextend::set("branches_k_color", k = hcl_k) %>% 
   dendextend::set("labels_colors")
@@ -208,10 +210,10 @@ cluster_assignments <- cutree(clusters, k = hcl_k)
 # think the $order attribute determines the order of the points in the dendrogram
 # if this can be mapped to the original datapoints then will have "clusters per dendrogram"
 # and then have "clusters per regular process" then merge the two
-atus_seq %>% as_tibble() %>% .[clusters$order, ] %>% View('asd')
+# atus_seq %>% as_tibble() %>% .[clusters$order, ] %>% View('asd')
 
-cluster_assignments
-cluster_assignments[clusters$order]
+# cluster_assignments
+# cluster_assignments[clusters$order]
 
 cluster_to_dend_mapping <- dplyr::tibble(cluster = cluster_assignments[clusters$order]) %>% 
   nest(-cluster) %>% 

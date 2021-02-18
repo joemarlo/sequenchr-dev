@@ -101,7 +101,7 @@ UI <- fluidPage(
                      height = 750)
         ),
         tabPanel(
-          title = 'Modal activities',
+          title = 'Modal states',
           br(),
           plotOutput(outputId = 'plotting_plot_modal',
                      height = 750)
