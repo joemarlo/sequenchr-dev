@@ -127,7 +127,7 @@ shinyApp(
                     ggplot(aes(x = period, y = sequenchr_seq_id, fill = value)) +
                     geom_tile() +
                     scale_fill_manual(values = color_mapping) +
-                    scale_y_continuous(breaks = 1:10) +
+                    scale_y_discrete(labels = NULL, breaks = NULL) +
                     labs(title = "Top 10 most common sequences",
                          x = 'Period',
                          y = 'Sequence (ranked by count)',
@@ -156,7 +156,7 @@ shinyApp(
                     ggplot(aes(x = period, y = id, fill = value)) +
                     geom_tile() +
                     scale_fill_manual(values = color_mapping) +
-                    scale_y_continuous(breaks = 1:10) +
+                    scale_y_discrete(labels = NULL, breaks = NULL) +
                     facet_wrap(~cluster, scales = 'free_y', ncol = input$clustering_slider_facet_ncol) +
                     labs(title = "Top 10 most common sequences by cluster",
                          x = 'Period',
@@ -227,7 +227,7 @@ shinyApp(
                     geom_col() +
                     scale_fill_manual(values = color_mapping) +
                     labs(title = "Modal activity per period",
-                         caption = "Ties are show as stacked bars",
+                         caption = "Ties are shown as stacked bars",
                          x = "Period",
                          y = 'Frequency',
                          fill = NULL)
@@ -244,7 +244,7 @@ shinyApp(
                     scale_fill_manual(values = color_mapping) +
                     facet_wrap(~cluster, scales = 'free_y', ncol = input$clustering_slider_facet_ncol) +
                     labs(title = "Modal activity per period by cluster",
-                         caption = "Ties are show as stacked bars",
+                         caption = "Ties are shown as stacked bars",
                          x = "Period",
                          y = 'Frequency',
                          fill = NULL)
