@@ -6,7 +6,7 @@ library(viridis)
 # library(TraMineR)
 # library(dendextend)
 # library(chorddiag)
-theme_set(theme_minimal())
+theme_set(theme_minimal(base_size = 16))
 
 # this shouldn't be necessary but is currently required
 setwd("sequenchr")
@@ -77,7 +77,7 @@ shinyApp(
                     ggplot(aes(x = period, y = reorder(sequenchr_seq_id, entropy), fill = value)) +
                     geom_tile() +
                     scale_fill_manual(values = color_mapping) +
-                    scale_y_discrete(labels = NULL) +
+                    scale_y_discrete(labels = NULL, breaks = NULL) +
                     labs(title = "All sequences sorted by entropy",
                          x = 'Period',
                          y = 'Sequence',
@@ -94,7 +94,7 @@ shinyApp(
                     ggplot(aes(x = period, y = reorder(sequenchr_seq_id, entropy), fill = value)) +
                     geom_tile() +
                     scale_fill_manual(values = color_mapping) +
-                    scale_y_discrete(labels = NULL) +
+                    scale_y_discrete(labels = NULL, breaks = NULL) +
                     facet_wrap(~cluster, scales = 'free_y', ncol = input$clustering_slider_facet_ncol) +
                     labs(title = "All sequences by cluster sorted by entropy",
                          x = 'Period',
@@ -286,7 +286,7 @@ shinyApp(
                     title = 'Dendrogram',
                     br(),
                     plotOutput(outputId = 'clustering_plot_dendrogram',
-                               height = 500)
+                               height = 600)
                 )
             )
             
@@ -297,7 +297,7 @@ shinyApp(
                     sliderInput(inputId = 'clustering_slider_n_clusters',
                                 label = 'Number of clusters',
                                 min = 2,
-                                max = 10,
+                                max = 30,
                                 step = 1,
                                 value = 1,
                                 ticks = FALSE),
@@ -372,22 +372,34 @@ shinyApp(
             # set connecting lines to grey
             ggd1$segments$col[is.na(ggd1$segments$col)] <- 'grey50'
             
+            # set the label positions
+            cluster_labels <- ggd1$segments %>% 
+                filter(col != 'grey50') %>% 
+                group_by(col) %>% 
+                summarize(x = mean(x), .groups = 'drop') %>% 
+                arrange(x) %>% 
+                mutate(label = paste0("Cluster ", 1:hcl_k))
+            
             # plot the dendrograms
-            ggd1$segments %>% 
+            p <- ggd1$segments %>% 
                 ggplot() + 
                 geom_segment(aes(x = x, y = y, xend = xend, yend = yend),
                              color = ggd1$segments$col, linetype = ggd1$segments$linetype,
                              lwd = 0.9, alpha = 0.7) +
-                scale_x_continuous(labels = NULL) +
+                scale_x_continuous(labels = cluster_labels$label,
+                                   breaks = cluster_labels$x) +
                 scale_y_continuous(labels = scales::comma_format()) +
                 labs(title = "Dendrogram of edit distance with Ward (D2) linkage",
                      subtitle = 'Helpful subtitle goes here',
                      x = NULL,
                      y = NULL) +
                 theme(axis.ticks = element_blank(),
+                      axis.text.x = element_text(angle = 35),
                       panel.grid.major.x = element_blank(),
                       panel.grid.minor.x = element_blank(),
                       legend.position = 'none')
+            
+            return(p)
         })
         
         # compute and plot silhouette width
@@ -420,7 +432,7 @@ shinyApp(
                     title = 'Silhouette plot',
                     br(),
                     plotOutput(outputId = 'clustering_plot_silhouette',
-                               height = 500)
+                               height = 600)
                 )
             )
         })

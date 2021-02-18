@@ -122,7 +122,7 @@ UI <- fluidPage(
           br(),
           plotOutput(outputId = 'plotting_plot_legend',
                      height = 400,
-                     width = 250)
+                     width = 320)
         )
       )
     )

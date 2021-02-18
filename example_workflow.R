@@ -172,18 +172,29 @@ ggd1$segments$linetype[which(is.na(ggd1$segments$col))] <- 'dashed'
 # set connecting lines to grey
 ggd1$segments$col[is.na(ggd1$segments$col)] <- 'grey50'
 
+# label positions
+cluster_labels <- ggd1$segments %>% 
+  filter(col != 'grey50') %>% 
+  group_by(col) %>% 
+  summarize(x = mean(x), #((max(x) - min(x)) / 2) + min(x),
+            .groups = 'drop') %>% 
+  arrange(x) %>% 
+  mutate(label = paste0("Cluster ", 1:hcl_k))
+
 # plot the dendrograms
 ggd1$segments %>% 
   ggplot() + 
   geom_segment(aes(x = x, y = y, xend = xend, yend = yend),
                color = ggd1$segments$col, linetype = ggd1$segments$linetype,
                lwd = 0.6, alpha = 0.7) +
-  scale_x_continuous(labels = NULL) +
+  scale_x_continuous(labels = cluster_labels$label,
+                     breaks = cluster_labels$x) +
   scale_y_continuous(labels = scales::comma_format()) +
   labs(title = "Dendrogram of edit distance with Ward (D2) linkage",
        x = NULL,
        y = NULL) +
   theme(axis.ticks = element_blank(),
+        axis.text.x = element_text(angle = 45),
         panel.grid.major.x = element_blank(),
         panel.grid.minor.x = element_blank(),
         legend.position = 'none')

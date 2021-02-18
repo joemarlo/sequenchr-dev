@@ -440,6 +440,6 @@ border 0 fixes the buttons moving around when you hover / click */
   margin-top: 0rem;
 }
 
-.irs-bar, .irs-bar-edge, .irs-single {
+.irs-bar, .irs-bar-edge, .irs-single, .irs-from, .irs-to {
   background-color: #302f42;
 }
