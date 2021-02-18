@@ -1,4 +1,6 @@
 example_data/*
+.DS_store
+.DS_Store
 
 # History files
 .Rhistory

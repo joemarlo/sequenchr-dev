@@ -2,10 +2,10 @@ library(dplyr)
 library(tidyr)
 library(ggplot2)
 library(shiny)
-library(viridis) # for color blind sensitive colors
-library(TraMineR)
-library(dendextend) # for dendrogram
-library(chorddiag) # for chord plot
+library(viridis)
+# library(TraMineR)
+# library(dendextend)
+# library(chorddiag)
 theme_set(theme_minimal())
 
 # this shouldn't be necessary but is currently required
@@ -18,8 +18,8 @@ source('main_ui.R', local = TRUE)
 # set default object if one doesn't exist
 # TODO: change this to stop if input doesn't exist
 appDir <- getwd()
-sequence_data_default <- atus_seq #mtcars
-sequence_data <- getShinyOption("sequence_data", sequence_data_default)
+# sequence_data_default <- atus_seq #mtcars
+sequence_data <- getShinyOption("sequence_data") #sequence_data_default)
 
 
 shinyApp(
@@ -64,7 +64,7 @@ shinyApp(
 
         # plotting ----------------------------------------------------------------
 
-        # render the sequence plot
+        # render the sequence index plot
         output$plotting_plot_sequence <- renderPlot({
             
             if (isFALSE(input$plotting_check_cluster)){
@@ -95,7 +95,7 @@ shinyApp(
                     geom_tile() +
                     scale_fill_manual(values = color_mapping) +
                     scale_y_discrete(labels = NULL) +
-                    facet_wrap(~cluster, scales = 'free_y') +
+                    facet_wrap(~cluster, scales = 'free_y', ncol = input$clustering_slider_facet_ncol) +
                     labs(title = "All sequences by cluster sorted by entropy",
                          x = 'Period',
                          y = 'Sequence',
@@ -108,8 +108,7 @@ shinyApp(
         # render the top 10 most common sequences
         # TODO: should show frequency of sequence somehow
         output$plotting_plot_common <- renderPlot({
-            
-            
+
             if (isFALSE(input$plotting_check_cluster)){
             
                 # plot without clustering
@@ -134,11 +133,13 @@ shinyApp(
                          y = 'Sequence (ranked by count)',
                          fill = NULL)
             } else {
+                
                 # plot with clustering
                 p <- store$tidy_data %>%
                     left_join(data.frame(cluster = factor(sub("  \\|.*", "", cluster_assignments()),
                                                           levels = paste0('Cluster ', 1:length(cluster_assignments()))), 
-                                         sequenchr_seq_id = 1:length(cluster_assignments()))) %>% 
+                                         sequenchr_seq_id = 1:length(cluster_assignments())),
+                              by = "sequenchr_seq_id") %>% 
                     group_by(sequenchr_seq_id, cluster) %>% 
                     summarize(seq_collapsed = paste0(value, collapse = 'SE3P'),
                               .groups = 'drop') %>% 
@@ -156,7 +157,7 @@ shinyApp(
                     geom_tile() +
                     scale_fill_manual(values = color_mapping) +
                     scale_y_continuous(breaks = 1:10) +
-                    facet_wrap(~cluster, scales = 'free_y') +
+                    facet_wrap(~cluster, scales = 'free_y', ncol = input$clustering_slider_facet_ncol) +
                     labs(title = "Top 10 most common sequences by cluster",
                          x = 'Period',
                          y = 'Sequence (ranked by count)',
@@ -169,7 +170,7 @@ shinyApp(
         
         # plot of just the legend colors
         output$plotting_plot_legend <- renderPlot({
-            as_tibble(names(store$color_mapping)) %>%
+            dplyr::tibble(value = names(store$color_mapping)) %>%
                 mutate(index = row_number()) %>% 
                 ggplot(aes(x=1, y = reorder(value, -index), fill = value)) + 
                 geom_tile(color = 'white', size = 3) + 
@@ -202,8 +203,8 @@ shinyApp(
                     ggplot(aes(x = period, fill = value)) +
                     geom_bar(width = 1) +
                     scale_fill_manual(values = color_mapping) +
-                    facet_wrap(~cluster, scales = 'free_y') +
-                    labs(title = "State distributions",
+                    facet_wrap(~cluster, scales = 'free_y', ncol = input$clustering_slider_facet_ncol) +
+                    labs(title = "State distributions by cluster",
                          x = 'Period',
                          y = 'Frequency',
                          fill = NULL)
@@ -241,8 +242,8 @@ shinyApp(
                     ggplot(aes(x = period, y = n, fill = value)) +
                     geom_col() +
                     scale_fill_manual(values = color_mapping) +
-                    facet_wrap(~cluster, scales = 'free_y') +
-                    labs(title = "Modal activity per period",
+                    facet_wrap(~cluster, scales = 'free_y', ncol = input$clustering_slider_facet_ncol) +
+                    labs(title = "Modal activity per period by cluster",
                          caption = "Ties are show as stacked bars",
                          x = "Period",
                          y = 'Frequency',
@@ -259,7 +260,12 @@ shinyApp(
         observeEvent(input$clustering_button_cluster, {
           
             # compute optimal matching distances
-            store$dist_matrix <- seqdist(sequence_data, method = "OM", indel = 1, sm = "TRATE")
+            store$dist_matrix <- TraMineR::seqdist(
+                seqdata = sequence_data,
+                method = "OM",
+                indel = 1,
+                sm = "TRATE"
+            )
             # dist_om_DHD <- seqdist(atus_seq, method = "DHD")
             
             # cluster the data
@@ -284,10 +290,27 @@ shinyApp(
                 )
             )
             
+            # render the clustering UI
+            output$clustering_UI <- renderUI({
+                tagList(
+                    br(),
+                    sliderInput(inputId = 'clustering_slider_n_clusters',
+                                label = 'Number of clusters',
+                                min = 2,
+                                max = 10,
+                                step = 1,
+                                value = 1,
+                                ticks = FALSE),
+                    br(),
+                    actionButton(inputId = 'clustering_button_silhouette',
+                                 label = 'Calculate silhouette width')
+                )
+            })
+            
             # add the download button
             output$clustering_button_UI <- renderUI({
                 downloadButton(outputId = 'clustering_button_download',
-                           label = 'Download cluster assignments')
+                               label = 'Download cluster assignments')
             })
         })
         
@@ -301,13 +324,25 @@ shinyApp(
             # get the cluster assignments and clean up
             hcl_k <- input$clustering_slider_n_clusters
             cluster_assignments <- cutree(store$cluster, k = hcl_k)
-            cluster_ns <- table(cluster_assignments)
-            cluster_assignments <- factor(
-                cluster_assignments,
+            
+            # reorder clusters to match dendrogram left to right
+            cluster_to_dend_mapping <- dplyr::tibble(cluster = cluster_assignments[clusters$order]) %>% 
+                nest(-cluster) %>% 
+                mutate(cluster_dend = row_number()) %>% 
+                unnest(data) %>% 
+                distinct()
+            cluster_sorted <- dplyr::tibble(cluster = cluster_assignments) %>% 
+                left_join(cluster_to_dend_mapping, by = 'cluster') %>% 
+                pull(cluster_dend)
+            
+            # add label
+            cluster_ns <- table(cluster_sorted)
+            cluster_names <- factor(
+                cluster_sorted,
                 labels = paste("Cluster", 1:hcl_k, " | n = ", cluster_ns)
             )
             
-            return(cluster_assignments)
+            return(cluster_names)
         })
 
         # plot the dendrogram
@@ -322,12 +357,13 @@ shinyApp(
             hcl_k <- input$clustering_slider_n_clusters
             
             # build base dendrogram
-            dend <- as.dendrogram(hcl_ward) %>% set("branches_k_color", k = hcl_k) %>% set("labels_colors")
+            dend <- as.dendrogram(hcl_ward) %>% 
+                dendextend::set("branches_k_color", k = hcl_k) %>% 
+                dendextend::set("labels_colors")
             
             # cut off bottom of dendogram for computation performance
-            # TODO: need a reactive way to do this
             dend <- cut(dend, h = input$clustering_slider_dendrogram_depth)$upper
-            ggd1 <- as.ggdend(dend)
+            ggd1 <- dendextend::as.ggdend(dend)
             
             # set dashed line for non-cluster segments
             ggd1$segments$linetype <- 'solid'
@@ -362,8 +398,8 @@ shinyApp(
                 diss = as.dist(store$dist_matrix),
                 distance = NULL,
                 method = 'ward.D2',
-                max.nc = 10,
-                min.nc = 2,
+                max.nc = input$clustering_slider_silhouette_range[2],
+                min.nc = input$clustering_slider_silhouette_range[1],
                 index = 'silhouette'
             )
             
@@ -408,7 +444,6 @@ shinyApp(
                 geom_line(color = 'grey30') +
                 geom_area(alpha = 0.4) +
                 geom_point(color = 'grey30') +
-                scale_x_continuous(breaks = 2:10) +
                 labs(title = "Silhouette width",
                      subtitle = 'Greater width is better',
                      x = 'n clusters',
@@ -417,14 +452,14 @@ shinyApp(
             return(p)
         })
         
-        # download the plot on the popup
+        # download the clusters
         output$clustering_button_download <- downloadHandler(
             
             # use plot title as file name but only retain alpha-numeric characters
             filename <- function() {
                 time <- gsub("-|:| ", "", Sys.time())
                 paste0(time, '_cluster_assignments.csv')
-                }, 
+            }, 
             
             # dataframe of clusters to download
             content <- function(file) {
@@ -433,9 +468,17 @@ shinyApp(
                     mutate(row = row_number(),
                            cluster = sub("  \\|.*", "", `.`)) %>% 
                     select(-`.`) %>% 
-                write.csv(., file)
+                write.csv(., file, row.names = FALSE)
             }
         )
+        
+        # update the max number of rows to plot based on the number of clusters
+        observeEvent(input$clustering_slider_n_clusters, {
+            updateSliderInput(session = session,
+                              inputId = 'clustering_slider_facet_ncol',
+                              max = input$clustering_slider_n_clusters)
+        })
+
         
 
     # explore -----------------------------------------------------------------
@@ -450,7 +493,7 @@ shinyApp(
         # })
         
         # render the chord plot
-        output$explore_plot_chord <- renderChorddiag({
+        output$explore_plot_chord <- chorddiag::renderChorddiag({
             
             # add NA filler rows after each group before calculating transition matrix
             # this prevents end of day looping back to beginning of day for next group
@@ -470,11 +513,13 @@ shinyApp(
             TRATE_mat <- TRATE_mat / sum(TRATE_mat)
             
             # plot the chord diagram
-            p <- chorddiag(data = TRATE_mat, 
-                           groupColors = as.vector(store$color_mapping), 
-                           groupnamePadding = 20,
-                           groupnameFontsize = 12,
-                           precision = 4)
+            p <- chorddiag::chorddiag(
+                data = TRATE_mat,
+                groupColors = as.vector(store$color_mapping),
+                groupnamePadding = 20,
+                groupnameFontsize = 12,
+                precision = 4
+            )
             
             return(p)
         })

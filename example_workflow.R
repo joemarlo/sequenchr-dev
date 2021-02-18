@@ -19,7 +19,8 @@ atus <- readr::read_csv('example_data/atus.csv')
 
 # define alphabet as all unique states
 alphabet <- sort(unique(unlist(atus[,-1])))
-# states <- c("CHH")
+
+# create state sequence object
 labels <- c("Care_HH", "Care_NHH", "Cons_Pur", "Eat_drink", "Edu", 
             "HH_activ", "Other", "Prsl_care", "Care_svcs", "Rel_spirit", 
             "Sleep", "Leisure", "Recreation", "Volunteer", "Work")
@@ -140,8 +141,6 @@ widths$name <- rownames(widths)
 # plot the silhouette width
 s_width$All.index %>% 
   tibble::enframe() %>% 
-  widths %>% 
-  rename(value = `s_width$All.index`) %>% 
   mutate(name = as.numeric(name)) %>% 
   ggplot(aes(x = name, y = value)) +
   geom_line(color = 'grey30') +
@@ -159,9 +158,12 @@ s_width$All.index %>%
 
 hcl_ward <- clusters
 hcl_k <- 7 #s_width$Best.nc[['Number_clusters']] # need a balance of optimal width and enough clusters to be interesting to the user
-dend <- as.dendrogram(hcl_ward) %>% set("branches_k_color", k = hcl_k) %>% set("labels_colors")
-dend <- cut(dend, h = 50)$upper # cut off bottom of dendogram for computation performance
-ggd1 <- as.ggdend(dend)
+dend <- as.dendrogram(hcl_ward) %>% 
+  dendextend::set("branches_k_color", k = hcl_k) %>% 
+  dendextend::set("labels_colors")
+dend_cut <- cut(dend, h = 50)$upper # cut off bottom of dendogram for computation performance
+ggd1 <- dendextend::as.ggdend(dend_cut)
+ggd1_full <- dendextend::as.ggdend(dend)
 
 # set dashed line for non-cluster segments
 ggd1$segments$linetype <- 'solid'
@@ -179,9 +181,6 @@ ggd1$segments %>%
   scale_x_continuous(labels = NULL) +
   scale_y_continuous(labels = scales::comma_format()) +
   labs(title = "Dendrogram of edit distance with Ward (D2) linkage",
-       subtitle = paste0("Weighted sample of ", 
-                         scales::comma_format()(n_sample),
-                         " respondents"),
        x = NULL,
        y = NULL) +
   theme(axis.ticks = element_blank(),
@@ -190,12 +189,37 @@ ggd1$segments %>%
         legend.position = 'none')
 # ggsave("Plots/dendrogram.png", width = 7, height = 4)
 
-# sequence plots ----------------------------------------------------------
+
+# map the clusters to the order on the dendrogram -------------------------
 
 cluster_assignments <- cutree(clusters, k = hcl_k)
-cluster_ns <- table(cluster_assignments)
-cluster_assignments <- factor(cluster_assignments, 
+
+# think the $order attribute determines the order of the points in the dendrogram
+# if this can be mapped to the original datapoints then will have "clusters per dendrogram"
+# and then have "clusters per regular process" then merge the two
+atus_seq %>% as_tibble() %>% .[clusters$order, ] %>% View('asd')
+
+cluster_assignments
+cluster_assignments[clusters$order]
+
+cluster_to_dend_mapping <- dplyr::tibble(cluster = cluster_assignments[clusters$order]) %>% 
+  nest(-cluster) %>% 
+  mutate(cluster_dend = row_number()) %>% 
+  unnest(data) %>% 
+  distinct()
+
+cluster_sorted <- dplyr::tibble(cluster = cluster_assignments) %>% 
+  left_join(cluster_to_dend_mapping, by = 'cluster') %>% 
+  pull(cluster_dend)
+
+
+cluster_ns <- table(cluster_sorted)
+cluster_assignments <- factor(cluster_sorted, 
                               labels = paste("Cluster", 1:hcl_k, " | n = ", cluster_ns))
+
+
+# sequence plots ----------------------------------------------------------
+
 
 tibble(cluster = cluster_assignments,
        sequenchr_seq_id = 1:length(cluster_assignments)) %>% 
