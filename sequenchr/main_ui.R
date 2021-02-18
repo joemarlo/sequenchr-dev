@@ -71,10 +71,10 @@ UI <- fluidPage(
                   value = c(2, 10),
                   ticks = FALSE),
       br(),
+      uiOutput(outputId = 'clustering_button_UI'),
+      br(),
       h4("Citations"),
       p("....lorem ipsum..."),
-      br(),
-      uiOutput(outputId = 'clustering_button_UI'),
       HTML('</details><br>')
     ),
     mainPanel(
@@ -108,14 +108,39 @@ UI <- fluidPage(
         ),
         tabPanel(
           title = "Transition matrix",
-          h3("Transition between activities, regardless of period"),
-          h5("The outside arc (node) represents the frequency of the activity"),
-          h5("The connection between the nodes is the transition rates between the two activities"),
-          br(), br(),
-          chorddiag::chorddiagOutput(
-            outputId = 'explore_plot_chord',
-            height = 700
+          br(),
+          h3("The below two plots visualize the frequency of transitions between states"),
+          br(),
+          sliderInput(inputId = 'plotting_slider_chord',
+                      label = 'Periods to include in transition rate calculation:',
+                      min = 1,
+                      max = 10,
+                      value = c(1, 10),
+                      step = 1,
+                      width = '50%',
+                      animate = TRUE),
+          tabsetPanel(
+            id = 'explore_tabs',
+            type = 'tabs',
+            tabPanel(
+              title = "Chord plot",
+              br(),
+              # h3("Transition between states"),
+              h5("The outside arc (node) represents the frequency of the states"),
+              h5("The connection between the nodes is the transition rates between the two states"),
+              br(), 
+              chorddiag::chorddiagOutput(
+                outputId = 'explore_plot_chord',
+                height = 700
+                )
+            ),
+            tabPanel(
+              title = 'Matrix',
+              br(),
+              plotOutput(outputId = 'explore_plot_matrix',
+                         height = 700)
             )
+          )
         ),
         tabPanel(
           title = 'Legend',

@@ -114,7 +114,6 @@ tidy_data %>%
        fill = NULL)
 
 
-
 # clustering --------------------------------------------------------------
 
 
@@ -258,7 +257,7 @@ freq_data <- tidy_data %>%
   mutate(value = as.character(value)) %>% 
   group_by(sequenchr_seq_id) %>% 
   group_split() %>% 
-  map_dfr(.f = function(df){
+  purrr::map_dfr(.f = function(df){
     df %>% add_row(sequenchr_seq_id = NA, value = NA, period = NA)
   })
 
@@ -271,6 +270,16 @@ TRATE_mat <- TRATE_mat / sum(TRATE_mat)
 # plot the chord diagram
 chorddiag(TRATE_mat, groupColors = as.vector(color_mapping), groupnamePadding = 20)
 
+# corplot
+dplyr::as_tibble(TRATE_mat) %>% 
+  ggplot(aes(x = previous, y = current, fill = n)) +
+  geom_tile() +
+  labs(title = "Correlation matrix",
+       subtitle = "A helpful subttile",
+       x = "From state",
+       y = 'To state',
+       fill = 'Transition rate') +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1))
 
 
 # other -------------------------------------------------------------------

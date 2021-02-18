@@ -321,7 +321,7 @@ shinyApp(
             validate(need(is(store$cluster, 'hclust'),
                           'Cluster the data first'))
             
-            # get the cluster assignments and clean up
+            # get the cluster assignments
             hcl_k <- input$clustering_slider_n_clusters
             cluster_assignments <- cutree(store$cluster, k = hcl_k)
             
@@ -493,7 +493,7 @@ shinyApp(
 
         
 
-    # explore -----------------------------------------------------------------
+    # chord plot --------------------------------------------------------------
 
         # # render the d3 plot
         # output$explore_d3_chord <- renderD3({
@@ -504,12 +504,15 @@ shinyApp(
         #          script = file.path('d3_plots', 'chord.js'))
         # })
         
-        # render the chord plot
-        output$explore_plot_chord <- chorddiag::renderChorddiag({
+        # transition matrix
+        transition_matrix <- reactive({
             
+            # filter the data to the periods specfiied by the input slider
             # add NA filler rows after each group before calculating transition matrix
             # this prevents end of day looping back to beginning of day for next group
             freq_data <- store$tidy_data %>% 
+                filter(period >= input$plotting_slider_chord[1],
+                       period <= input$plotting_slider_chord[2]) %>% 
                 mutate(value = as.character(value)) %>% 
                 group_by(sequenchr_seq_id) %>% 
                 group_split() %>% 
@@ -524,10 +527,25 @@ shinyApp(
                                           current = freq_data$value[2:n]))
             TRATE_mat <- TRATE_mat / sum(TRATE_mat)
             
+            return(list(freq_data, TRATE_mat))
+        })
+        
+        # render the chord plot
+        output$explore_plot_chord <- chorddiag::renderChorddiag({
+            
+            # get the transition matrix
+            trans_mat <- transition_matrix()
+            freq_data <- trans_mat[[1]]
+            TRATE_mat <- trans_mat[[2]]
+            
+            # create the color vector
+            states_included <- intersect(names(store$color_mapping), rownames(TRATE_mat)) #unique(freq_data$value))
+            colors_chord <- as.vector(store$color_mapping[states_included])
+            
             # plot the chord diagram
             p <- chorddiag::chorddiag(
                 data = TRATE_mat,
-                groupColors = as.vector(store$color_mapping),
+                groupColors = colors_chord,
                 groupnamePadding = 20,
                 groupnameFontsize = 12,
                 precision = 4
@@ -535,6 +553,34 @@ shinyApp(
             
             return(p)
         })
+        
+        # render the correlation plot
+        output$explore_plot_matrix <- renderPlot({
+            
+            # get the transition matrix
+            TRATE_mat <- transition_matrix()[[2]]
+            
+            # plot it
+            # TODO: issue here that labels should be comprehensive regardless of period
+            p <- dplyr::as_tibble(TRATE_mat) %>%
+                ggplot(aes(x = previous, y = current, fill = n)) +
+                geom_tile() +
+                scale_fill_viridis_c() +
+                labs(title = "Transition matrix",
+                     subtitle = "A helpful subtitle",
+                     x = "\nFrom state",
+                     y = 'To state',
+                     fill = 'Transition rate') +
+                theme(axis.text.x = element_text(angle = 35, hjust = 1))
+            
+            return(p)
+        })
+        
+        # on load, update the slider with the correct number of periods based on the data
+        updateSliderInput(session = session,
+                          inputId = 'plotting_slider_chord',
+                          max = ncol(sequence_data),
+                          value = c(1, ncol(sequence_data)))
         
     }
 )
