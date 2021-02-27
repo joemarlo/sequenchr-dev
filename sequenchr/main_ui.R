@@ -1,12 +1,12 @@
 UI <- fluidPage(
-    # download roboto font
+  
+  # download fonts
   HTML('<link rel="preconnect" href="https://fonts.gstatic.com">'),
   HTML('<link rel="stylesheet" href="//fonts.googleapis.com/css?family=Roboto:400,300,700,400italic">'),
   HTML('<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Libre+Barcode+128+Text&display=swap">'),
 
   # load custom CSS file
   includeCSS(file.path("www", "custom_css.css")),
-  # includeCSS(file.path("www", "d3_css.css")),
   
   # set top left title
   titlePanel(
