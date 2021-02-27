@@ -324,7 +324,7 @@ shinyApp(
             
             # get the cluster assignments
             hcl_k <- input$clustering_slider_n_clusters
-            cluster_assignments <- cutree(store$cluster_model, k = hcl_k)
+            cluster_assignments <- stats::cutree(store$cluster_model, k = hcl_k)
             
             # reorder clusters to match dendrogram left to right
             cluster_to_dend_mapping <- dplyr::tibble(cluster = cluster_assignments[store$cluster_model$order]) %>% 
