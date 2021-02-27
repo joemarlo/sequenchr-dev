@@ -96,43 +96,20 @@ shinyApp(
 
         # render the sequence index plot
         output$plotting_plot_sequence <- renderPlot({
+          
+          if (isFALSE(input$plotting_check_cluster)){
+            p <- plot_sequence_index(seq_def_tidy = store$tidy_data,
+                                     color_mapping = store$color_mapping)
+          } else {
+            p <- plot_sequence_index(
+              seq_def_tidy = store$tidy_data,
+              color_mapping = store$color_mapping,
+              cluster_assignments = cluster_assignments(),
+              n_col_facets = input$clustering_slider_facet_ncol
+            )
+          }
             
-            if (isFALSE(input$plotting_check_cluster)){
-                
-                # plot the regular sequences without clustering
-                p <- store$tidy_data %>% 
-                    group_by(sequenchr_seq_id) %>% 
-                    mutate(entropy = DescTools::Entropy(table(value))) %>%
-                    ungroup() %>% 
-                    ggplot(aes(x = period, y = reorder(sequenchr_seq_id, entropy), fill = value)) +
-                    geom_tile() +
-                    scale_fill_manual(values = color_mapping) +
-                    scale_y_discrete(labels = NULL, breaks = NULL) +
-                    labs(title = "All sequences sorted by entropy",
-                         x = 'Period',
-                         y = 'Sequence',
-                         fill = NULL)
-            } else {
-                
-                # plot the sequences with clusters
-                p <- tibble(cluster = cluster_assignments(),
-                            sequenchr_seq_id = 1:length(cluster_assignments())) %>%
-                    right_join(store$tidy_data, by = 'sequenchr_seq_id') %>%
-                    group_by(sequenchr_seq_id) %>%
-                    mutate(entropy = DescTools::Entropy(table(value))) %>%
-                    ungroup() %>%
-                    ggplot(aes(x = period, y = reorder(sequenchr_seq_id, entropy), fill = value)) +
-                    geom_tile() +
-                    scale_fill_manual(values = color_mapping) +
-                    scale_y_discrete(labels = NULL, breaks = NULL) +
-                    facet_wrap(~cluster, scales = 'free_y', ncol = input$clustering_slider_facet_ncol) +
-                    labs(title = "All sequences by cluster sorted by entropy",
-                         x = 'Period',
-                         y = 'Sequence',
-                         fill = NULL)
-            }
-            
-            return(p)
+          return(p)
         })
         
         # render the top 10 most common sequences
@@ -200,87 +177,47 @@ shinyApp(
         
         # plot of just the legend colors
         output$plotting_plot_legend <- renderPlot({
-            dplyr::tibble(value = names(store$color_mapping)) %>%
-                mutate(index = row_number()) %>% 
-                ggplot(aes(x=1, y = reorder(value, -index), fill = value)) + 
-                geom_tile(color = 'white', size = 3) + 
-                scale_fill_manual(values = color_mapping) +
-                scale_x_continuous(labels = NULL) + 
-                labs(x = NULL, y = NULL) + 
-                theme(legend.position = 'none')
+          
+          # plot it
+          p <- plot_legend(color_mapping = store$color_mapping)
+          
+          return(p)
         })
         
         # state distribution plot
         output$plotting_plot_state <- renderPlot({
             
-            if (isFALSE(input$plotting_check_cluster)){
-                
-                # plot without clustering
-                p <- store$tidy_data %>% 
-                    ggplot(aes(x = period, fill = value)) +
-                    geom_bar(width = 1) +
-                    scale_fill_manual(values = color_mapping) +
-                    labs(title = "State distributions",
-                         x = 'Period',
-                         y = 'Frequency',
-                         fill = NULL)
-            } else {
-                
-                # plot with clustering
-                p <- tibble(cluster = cluster_assignments(),
-                            sequenchr_seq_id = 1:length(cluster_assignments())) %>%
-                    right_join(store$tidy_data, by = 'sequenchr_seq_id') %>% 
-                    ggplot(aes(x = period, fill = value)) +
-                    geom_bar(width = 1) +
-                    scale_fill_manual(values = color_mapping) +
-                    facet_wrap(~cluster, scales = 'free_y', ncol = input$clustering_slider_facet_ncol) +
-                    labs(title = "State distributions by cluster",
-                         x = 'Period',
-                         y = 'Frequency',
-                         fill = NULL)
-            }
-            
-            return(p)
+          if (isFALSE(input$plotting_check_cluster)){
+            p <- plot_state(seq_def_tidy = store$tidy_data,
+                            color_mapping = store$color_mapping)
+          } else {
+            p <- plot_state(
+              seq_def_tidy = store$tidy_data,
+              color_mapping = store$color_mapping,
+              cluster_assignments = cluster_assignments(),
+              n_col_facets = input$clustering_slider_facet_ncol
+            )
+          }
+          
+          return(p)
         })
         
         # modal plot
         output$plotting_plot_modal <- renderPlot({
             
-            if (isFALSE(input$plotting_check_cluster)){
-                
-                # plot without clustering
-                p <- store$tidy_data %>% 
-                    count(value, period) %>% 
-                    group_by(period) %>% 
-                    filter(n == max(n)) %>% 
-                    ggplot(aes(x = period, y = n, fill = value)) +
-                    geom_col() +
-                    scale_fill_manual(values = color_mapping) +
-                    labs(title = "Modal activity per period",
-                         caption = "Ties are shown as stacked bars",
-                         x = "Period",
-                         y = 'Frequency',
-                         fill = NULL)
-            } else {
-                # plot with cluster
-                p <- tibble(cluster = cluster_assignments(),
-                            sequenchr_seq_id = 1:length(cluster_assignments())) %>%
-                    right_join(store$tidy_data, by = 'sequenchr_seq_id') %>% 
-                    count(cluster, value, period) %>% 
-                    group_by(cluster, period) %>% 
-                    filter(n == max(n)) %>% 
-                    ggplot(aes(x = period, y = n, fill = value)) +
-                    geom_col() +
-                    scale_fill_manual(values = color_mapping) +
-                    facet_wrap(~cluster, scales = 'free_y', ncol = input$clustering_slider_facet_ncol) +
-                    labs(title = "Modal activity per period by cluster",
-                         caption = "Ties are shown as stacked bars",
-                         x = "Period",
-                         y = 'Frequency',
-                         fill = NULL)
-            }
-            
-            return(p)
+          if (isFALSE(input$plotting_check_cluster)){
+            p <- plot_modal(seq_def_tidy = store$tidy_data,
+                            color_mapping = store$color_mapping)
+          } else {
+            p <- plot_modal(
+              seq_def_tidy = store$tidy_data,
+              color_mapping = store$color_mapping,
+              cluster_assignments = cluster_assignments(),
+              n_col_facets = input$clustering_slider_facet_ncol
+            )
+          }
+          
+          return(p)
         })
         
         # covariates plot
@@ -411,51 +348,12 @@ shinyApp(
                           'Cluster the data first'))
             
             # retrieve the current cluster model and k cluster value
-            hcl_ward <- store$cluster
-            hcl_k <- input$clustering_slider_n_clusters
+            cluster <- store$cluster
+            k <- input$clustering_slider_n_clusters
+            h <- input$clustering_slider_dendrogram_depth
             
-            # build base dendrogram
-            dend <- as.dendrogram(hcl_ward) %>% 
-                dendextend::set("branches_k_color", k = hcl_k) %>% 
-                dendextend::set("labels_colors")
-            
-            # cut off bottom of dendogram for computation performance
-            dend <- cut(dend, h = input$clustering_slider_dendrogram_depth)$upper
-            ggd1 <- dendextend::as.ggdend(dend)
-            
-            # set dashed line for non-cluster segments
-            ggd1$segments$linetype <- 'solid'
-            ggd1$segments$linetype[which(is.na(ggd1$segments$col))] <- 'dashed'
-            
-            # set connecting lines to grey
-            ggd1$segments$col[is.na(ggd1$segments$col)] <- 'grey50'
-            
-            # set the label positions
-            cluster_labels <- ggd1$segments %>% 
-                filter(col != 'grey50') %>% 
-                group_by(col) %>% 
-                summarize(x = mean(x), .groups = 'drop') %>% 
-                arrange(x) %>% 
-                mutate(label = paste0("Cluster ", 1:hcl_k))
-            
-            # plot the dendrograms
-            p <- ggd1$segments %>% 
-                ggplot() + 
-                geom_segment(aes(x = x, y = y, xend = xend, yend = yend),
-                             color = ggd1$segments$col, linetype = ggd1$segments$linetype,
-                             lwd = 0.9, alpha = 0.7) +
-                scale_x_continuous(labels = cluster_labels$label,
-                                   breaks = cluster_labels$x) +
-                scale_y_continuous(labels = scales::comma_format()) +
-                labs(title = "Dendrogram",
-                     subtitle = 'Helpful subtitle goes here',
-                     x = NULL,
-                     y = NULL) +
-                theme(axis.ticks = element_blank(),
-                      axis.text.x = element_text(angle = 35, hjust = 1),
-                      panel.grid.major.x = element_blank(),
-                      panel.grid.minor.x = element_blank(),
-                      legend.position = 'none')
+            # plot it
+            p <- plot_dendrogram(cluster, k, h)
             
             return(p)
         })
@@ -649,20 +547,7 @@ shinyApp(
             TRATE_mat <- transition_matrix()[[1]]
             
             # plot it
-            # TODO: issue here that labels should be comprehensive regardless of period
-            # TODO: add clustering
-            p <- TRATE_mat %>%
-                pivot_longer(cols = -current, names_to = "previous", values_to = "n") %>% 
-                ggplot(aes(x = previous, y = current, fill = n, label = round(n, 3))) +
-                geom_tile() +
-                geom_text(color = 'grey90') +
-                scale_fill_viridis_c() +
-                labs(title = "Transition matrix",
-                     subtitle = "A helpful subtitle",
-                     x = "\nFrom state",
-                     y = 'To state',
-                     fill = 'Transition rate') +
-                theme(axis.text.x = element_text(angle = 35, hjust = 1))
+            p <- plot_transition_matrix(TRATE_mat)
                 
             return(p)
         })

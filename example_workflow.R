@@ -1,4 +1,5 @@
 source('launch_sequenchr.R')
+source('functions.R')
 library(TraMineR)
 data(mvad)
 seqstatl(mvad[, 17:86])
