@@ -26,10 +26,23 @@ UI <- fluidPage(
                     label = 'Cluster the data?'),
       conditionalPanel(
         condition = 'input.plotting_check_cluster == true',
-        selectInput(inputId = 'clustering_select_distance_method',
+        selectInput(inputId = 'clustering_select_distanceMethod',
                     label = 'Distance method',
-                    choices = 'TRATE',
-                    selected = 'TRATE'),
+                    choices = c('OM', 'HAM', 'DHD'),
+                    selected = 'OM'),
+        conditionalPanel(
+          condition = 'input.clustering_select_distanceMethod == "OM" || input.clustering_select_distanceMethod == "DHD"',
+          selectInput(inputId = 'clustering_select_substitutionMethod',
+                      label = 'Substitution method',
+                      choices = 'TRATE',
+                      selected = 'TRATE')
+        ),
+        conditionalPanel(
+          condition = 'input.clustering_select_distanceMethod == "OM"',
+          selectInput(inputId = 'clustering_slider_indel',
+                      label = 'Insertion/deletion cost',
+                      choices = c('auto', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10'))
+          ),
         selectInput(inputId = 'clustering_select_clustering_method',
                     label = 'Clustering method',
                     choices = c('ward.D2', 'complete', 'average'),

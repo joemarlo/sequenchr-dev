@@ -38,7 +38,7 @@ atus_seq <- seqdef(data = atus[, -1],
 covars_df <- tibble(cov1 = rnorm(1000), cov2 = runif(1000)) #, cov3 = sample(c("yes", "no", 'maybe'), size = 1000, replace = TRUE))
 
 # launch shiny app
-launch_sequenchr(atus_seq, covars_df)
+launch_sequenchr(atus_seq)#, covars_df)
 
 
 # scratch work ------------------------------------------------------------

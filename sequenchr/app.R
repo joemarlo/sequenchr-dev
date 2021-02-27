@@ -23,25 +23,20 @@ sequence_data <- getShinyOption("sequence_data") #sequence_data_default)
 covariates_data <- getShinyOption("covariates_data") 
 
 
-# functions ---------------------------------------------------------------
+# pre-processing ----------------------------------------------------------
 
-cluster_stats <- function(dist_matrix, cluster_model, k_min, k_max){
-  all_stats <- lapply(k_min:k_max, function(k){
-    c_stats <- fpc::cluster.stats(
-      d = dist_matrix,
-      clustering = stats::cutree(cluster_model, k = k),
-      silhouette = TRUE
-    )
-    return(dplyr::tibble(k = k, ch = c_stats$ch, silhouette = c_stats$avg.silwidth))
-  })
-  
-  all_stats <- dplyr::bind_rows(all_stats)
-  scale_01 <- function(x) (x - min(x)) / diff(range(x))
-  all_stats$ch_norm <- scale_01(all_stats$ch)
-  all_stats$silhouette_norm <- scale_01(all_stats$silhouette)
-  
-  return(all_stats)
-}
+# establish color mapping
+color_mapping <- viridis::viridis_pal()(length(alphabet(sequence_data)))
+names(color_mapping) <- alphabet(sequence_data)
+
+# tidy the data
+tidy_data <- tidy_sequence_data(sequence_data)
+if (!is.null(covariates_data)){
+  tidy_cov_data <- covariates_data %>% 
+    as_tibble() %>% 
+    mutate(sequenchr_seq_id = row_number()) %>% 
+    pivot_longer(cols = -sequenchr_seq_id)
+} else tidy_cov_data <- NULL
 
 
 # app ---------------------------------------------------------------------
@@ -55,28 +50,8 @@ shinyApp(
         on.exit(setwd(oldwd))
         on.exit(setwd(".."))
         
-        # initialize store
+        # initialize store for reactive variables
         store <- reactiveValues()
-        
-        # establish color mapping
-        color_mapping <- viridis::viridis_pal()(length(alphabet(sequence_data)))
-        names(color_mapping) <- alphabet(sequence_data)
-        store$color_mapping <- color_mapping
-        
-        # tidy the data
-        store$tidy_data <- sequence_data %>%
-            as_tibble() %>% 
-            setNames(1:ncol(sequence_data)) %>% 
-            mutate(sequenchr_seq_id = row_number()) %>%
-            pivot_longer(cols = setdiff(colnames(.), "sequenchr_seq_id")) %>% 
-            mutate(period = as.numeric(name)) %>% 
-            dplyr::select(-name)
-        if (!is.null(covariates_data)){
-          store$tidy_cov_data <- covariates_data %>% 
-            as_tibble() %>% 
-            mutate(sequenchr_seq_id = row_number()) %>% 
-            pivot_longer(cols = -sequenchr_seq_id)
-        } else store$tidy_cov_data <- NULL
         
         # summary table
         output$summary_table <- renderText({
@@ -98,12 +73,12 @@ shinyApp(
         output$plotting_plot_sequence <- renderPlot({
           
           if (isFALSE(input$plotting_check_cluster)){
-            p <- plot_sequence_index(seq_def_tidy = store$tidy_data,
-                                     color_mapping = store$color_mapping)
+            p <- plot_sequence_index(seq_def_tidy = tidy_data,
+                                     color_mapping = color_mapping)
           } else {
             p <- plot_sequence_index(
-              seq_def_tidy = store$tidy_data,
-              color_mapping = store$color_mapping,
+              seq_def_tidy = tidy_data,
+              color_mapping = color_mapping,
               cluster_assignments = cluster_assignments(),
               n_col_facets = input$clustering_slider_facet_ncol
             )
@@ -114,72 +89,72 @@ shinyApp(
         
         # render the top 10 most common sequences
         # TODO: should show frequency of sequence somehow
-        output$plotting_plot_common <- renderPlot({
-
-            if (isFALSE(input$plotting_check_cluster)){
-            
-                # plot without clustering
-                p <- store$tidy_data %>% 
-                    group_by(sequenchr_seq_id) %>% 
-                    summarize(seq_collapsed = paste0(value, collapse = 'SE3P'),
-                              .groups = 'drop') %>% 
-                    count(seq_collapsed) %>% 
-                    arrange(desc(n)) %>%
-                    slice_head(n = 10) %>% 
-                    separate(seq_collapsed, into = paste0('p', 1:ncol(sequence_data)), sep = "SE3P") %>% 
-                    mutate(sequenchr_seq_id = row_number()) %>%
-                    pivot_longer(cols = setdiff(colnames(.), c('n', "sequenchr_seq_id"))) %>% 
-                    mutate(name = as.numeric(gsub('p', '', name))) %>% 
-                    rename(period = name) %>% 
-                    ggplot(aes(x = period, y = sequenchr_seq_id, fill = value)) +
-                    geom_tile() +
-                    scale_fill_manual(values = color_mapping) +
-                    scale_y_discrete(labels = NULL, breaks = NULL) +
-                    labs(title = "Top 10 most common sequences",
-                         x = 'Period',
-                         y = 'Sequence (ranked by count)',
-                         fill = NULL)
-            } else {
-                
-                # plot with clustering
-                p <- store$tidy_data %>%
-                    left_join(data.frame(cluster = factor(sub("  \\|.*", "", cluster_assignments()),
-                                                          levels = paste0('Cluster ', 1:length(cluster_assignments()))), 
-                                         sequenchr_seq_id = 1:length(cluster_assignments())),
-                              by = "sequenchr_seq_id") %>% 
-                    group_by(sequenchr_seq_id, cluster) %>% 
-                    summarize(seq_collapsed = paste0(value, collapse = 'SE3P'),
-                              .groups = 'drop') %>% 
-                    count(cluster, seq_collapsed) %>%
-                    group_by(cluster) %>% 
-                    arrange(desc(n)) %>%
-                    slice_head(n = 10) %>% 
-                    ungroup() %>% 
-                    separate(seq_collapsed, into = paste0('p', 1:ncol(sequence_data)), sep = "SE3P") %>% 
-                    mutate(id = row_number()) %>%
-                    pivot_longer(cols = setdiff(colnames(.), c('n', "id", 'cluster'))) %>% 
-                    mutate(name = as.numeric(gsub('p', '', name))) %>% 
-                    rename(period = name) %>%
-                    ggplot(aes(x = period, y = id, fill = value)) +
-                    geom_tile() +
-                    scale_fill_manual(values = color_mapping) +
-                    scale_y_discrete(labels = NULL, breaks = NULL) +
-                    facet_wrap(~cluster, scales = 'free_y', ncol = input$clustering_slider_facet_ncol) +
-                    labs(title = "Top 10 most common sequences by cluster",
-                         x = 'Period',
-                         y = 'Sequence (ranked by count)',
-                         fill = NULL)
-
-            }
-            
-            return(p)
-        }) 
+        # output$plotting_plot_common <- renderPlot({
+        # 
+        #     if (isFALSE(input$plotting_check_cluster)){
+        #     
+        #         # plot without clustering
+        #         p <- tidy_data%>% 
+        #             group_by(sequenchr_seq_id) %>% 
+        #             summarize(seq_collapsed = paste0(value, collapse = 'SE3P'),
+        #                       .groups = 'drop') %>% 
+        #             count(seq_collapsed) %>% 
+        #             arrange(desc(n)) %>%
+        #             slice_head(n = 10) %>% 
+        #             separate(seq_collapsed, into = paste0('p', 1:ncol(sequence_data)), sep = "SE3P") %>% 
+        #             mutate(sequenchr_seq_id = row_number()) %>%
+        #             pivot_longer(cols = setdiff(colnames(.), c('n', "sequenchr_seq_id"))) %>% 
+        #             mutate(name = as.numeric(gsub('p', '', name))) %>% 
+        #             rename(period = name) %>% 
+        #             ggplot(aes(x = period, y = sequenchr_seq_id, fill = value)) +
+        #             geom_tile() +
+        #             scale_fill_manual(values = color_mapping) +
+        #             scale_y_discrete(labels = NULL, breaks = NULL) +
+        #             labs(title = "Top 10 most common sequences",
+        #                  x = 'Period',
+        #                  y = 'Sequence (ranked by count)',
+        #                  fill = NULL)
+        #     } else {
+        #         
+        #         # plot with clustering
+        #         p <- tidy_data%>%
+        #             left_join(data.frame(cluster = factor(sub("  \\|.*", "", cluster_assignments()),
+        #                                                   levels = paste0('Cluster ', 1:length(cluster_assignments()))), 
+        #                                  sequenchr_seq_id = 1:length(cluster_assignments())),
+        #                       by = "sequenchr_seq_id") %>% 
+        #             group_by(sequenchr_seq_id, cluster) %>% 
+        #             summarize(seq_collapsed = paste0(value, collapse = 'SE3P'),
+        #                       .groups = 'drop') %>% 
+        #             count(cluster, seq_collapsed) %>%
+        #             group_by(cluster) %>% 
+        #             arrange(desc(n)) %>%
+        #             slice_head(n = 10) %>% 
+        #             ungroup() %>% 
+        #             separate(seq_collapsed, into = paste0('p', 1:ncol(sequence_data)), sep = "SE3P") %>% 
+        #             mutate(id = row_number()) %>%
+        #             pivot_longer(cols = setdiff(colnames(.), c('n', "id", 'cluster'))) %>% 
+        #             mutate(name = as.numeric(gsub('p', '', name))) %>% 
+        #             rename(period = name) %>%
+        #             ggplot(aes(x = period, y = id, fill = value)) +
+        #             geom_tile() +
+        #             scale_fill_manual(values = color_mapping) +
+        #             scale_y_discrete(labels = NULL, breaks = NULL) +
+        #             facet_wrap(~cluster, scales = 'free_y', ncol = input$clustering_slider_facet_ncol) +
+        #             labs(title = "Top 10 most common sequences by cluster",
+        #                  x = 'Period',
+        #                  y = 'Sequence (ranked by count)',
+        #                  fill = NULL)
+        # 
+        #     }
+        #     
+        #     return(p)
+        # }) 
         
         # plot of just the legend colors
         output$plotting_plot_legend <- renderPlot({
           
           # plot it
-          p <- plot_legend(color_mapping = store$color_mapping)
+          p <- plot_legend(color_mapping = color_mapping)
           
           return(p)
         })
@@ -188,12 +163,12 @@ shinyApp(
         output$plotting_plot_state <- renderPlot({
             
           if (isFALSE(input$plotting_check_cluster)){
-            p <- plot_state(seq_def_tidy = store$tidy_data,
-                            color_mapping = store$color_mapping)
+            p <- plot_state(seq_def_tidy = tidy_data,
+                            color_mapping = color_mapping)
           } else {
             p <- plot_state(
-              seq_def_tidy = store$tidy_data,
-              color_mapping = store$color_mapping,
+              seq_def_tidy = tidy_data,
+              color_mapping = color_mapping,
               cluster_assignments = cluster_assignments(),
               n_col_facets = input$clustering_slider_facet_ncol
             )
@@ -206,12 +181,12 @@ shinyApp(
         output$plotting_plot_modal <- renderPlot({
             
           if (isFALSE(input$plotting_check_cluster)){
-            p <- plot_modal(seq_def_tidy = store$tidy_data,
-                            color_mapping = store$color_mapping)
+            p <- plot_modal(seq_def_tidy = tidy_data,
+                            color_mapping = color_mapping)
           } else {
             p <- plot_modal(
-              seq_def_tidy = store$tidy_data,
-              color_mapping = store$color_mapping,
+              seq_def_tidy = tidy_data,
+              color_mapping = color_mapping,
               cluster_assignments = cluster_assignments(),
               n_col_facets = input$clustering_slider_facet_ncol
             )
@@ -223,21 +198,21 @@ shinyApp(
         # covariates plot
         output$plotting_plot_covariates <- renderPlot({
           
-          validate(need(is(store$tidy_cov_data, 'data.frame'),
+          validate(need(is(tidy_cov_data, 'data.frame'),
                         'Covariates data not provided'))
           
           if (isFALSE(input$plotting_check_cluster)){
             
             # plot without clustering
-            p <- store$tidy_cov_data %>% 
+            p <- tidy_cov_data %>% 
               ggplot(aes(x = value, group = name)) + 
               geom_density()
             
           } else {
-            # plot with cluster
+            # plot with clustering
             p <- dplyr::tibble(cluster = cluster_assignments(),
                                sequenchr_seq_id = 1:length(cluster_assignments())) %>%
-              right_join(store$tidy_cov_data, by = 'sequenchr_seq_id') %>%
+              right_join(tidy_cov_data, by = 'sequenchr_seq_id') %>%
               ggplot(aes(x = value, group = name)) +
               geom_density() +
               facet_wrap( ~ cluster,
@@ -251,42 +226,73 @@ shinyApp(
 
     # clustering --------------------------------------------------------------
 
+        # render correct options for substituion cost based on distance method input
+        observeEvent(input$clustering_select_distanceMethod, {
+          
+          if (input$clustering_select_distanceMethod == 'DHD'){
+            updateSelectInput(session = session,
+                              inputId = 'clustering_select_substitutionMethod',
+                              choices = 'TRATE',
+                              selected = 'TRATE')
+          } else if (input$clustering_select_distanceMethod == 'OM') {
+            updateSelectInput(session = session,
+                              inputId = 'clustering_select_substitutionMethod',
+                              choices = c('TRATE', 'CONSTANT', 'INDELS', 'INDELSLOG'),
+                              selected = 'TRATE')
+          }
+        })
+        
         # cluster the data
         observeEvent(input$clustering_button_cluster, {
           
-            # compute optimal matching distances
+          # compute the distance matrix
+          if (input$clustering_select_distanceMethod == 'DHD'){
             store$dist_matrix <- TraMineR::seqdist(
-                seqdata = sequence_data,
-                method = "OM",
-                indel = 1,
-                sm = "TRATE"
+              seqdata = sequence_data,
+              method = "DHD"
             )
-            # dist_om_DHD <- seqdist(atus_seq, method = "DHD")
+          } else if (input$clustering_select_distanceMethod == 'HAM'){
+            store$dist_matrix <- TraMineR::seqdist(
+              seqdata = sequence_data,
+              method = "HAM"
+            )
+          } else if (input$clustering_select_distanceMethod == 'OM'){
             
-            # cluster the data
-            store$cluster <- fastcluster::hclust(
-                d = as.dist(store$dist_matrix), 
-                method = input$clustering_select_clustering_method
-                )
+            indel <- input$clustering_slider_indel
+            if (indel != 'auto') indel <- as.numeric(indel)
             
-            # remove and add dendrogram tab
-            removeTab(inputId = 'plotting_tabs',
-                      target = 'Dendrogram')
-            insertTab(
-                inputId = 'plotting_tabs',
-                target = 'Legend',
-                position = 'after',
-                select = TRUE,
-                tab = tabPanel(
-                    title = 'Dendrogram',
-                    br(),
-                    plotOutput(outputId = 'clustering_plot_dendrogram',
-                               height = 600)
-                )
+            store$dist_matrix <- TraMineR::seqdist(
+              seqdata = sequence_data,
+              method = "OM",
+              indel = indel,
+              sm = input$clustering_select_substitutionMethod
+            )
+          }
+
+          # cluster the data
+          store$cluster_model <- fastcluster::hclust(
+            d = as.dist(store$dist_matrix),
+            method = input$clustering_select_clustering_method
             )
             
-            # render the clustering UI
-            output$clustering_UI <- renderUI({
+          # remove and add dendrogram tab
+          removeTab(inputId = 'plotting_tabs',
+                    target = 'Dendrogram')
+          insertTab(
+            inputId = 'plotting_tabs',
+            target = 'Legend',
+            position = 'after',
+            select = TRUE,
+            tab = tabPanel(
+              title = 'Dendrogram',
+              br(),
+              plotOutput(outputId = 'clustering_plot_dendrogram',
+                         height = 600)
+              )
+            )
+            
+          # render the clustering UI
+          output$clustering_UI <- renderUI({
                 tagList(
                     br(),
                     sliderInput(inputId = 'clustering_slider_n_clusters',
@@ -302,10 +308,10 @@ shinyApp(
                 )
             })
             
-            # add the download button
-            output$clustering_button_UI <- renderUI({
-                downloadButton(outputId = 'clustering_button_download',
-                               label = 'Download cluster assignments')
+          # add the download button
+          output$clustering_button_UI <- renderUI({
+            downloadButton(outputId = 'clustering_button_download',
+                           label = 'Download cluster assignments')
             })
         })
         
@@ -313,15 +319,15 @@ shinyApp(
         cluster_assignments <- reactive({
             
             # stop here if clustering hasn't been run yet
-            validate(need(is(store$cluster, 'hclust'),
+            validate(need(is(store$cluster_model, 'hclust'),
                           'Cluster the data first'))
             
             # get the cluster assignments
             hcl_k <- input$clustering_slider_n_clusters
-            cluster_assignments <- cutree(store$cluster, k = hcl_k)
+            cluster_assignments <- cutree(store$cluster_model, k = hcl_k)
             
             # reorder clusters to match dendrogram left to right
-            cluster_to_dend_mapping <- dplyr::tibble(cluster = cluster_assignments[store$cluster$order]) %>% 
+            cluster_to_dend_mapping <- dplyr::tibble(cluster = cluster_assignments[store$cluster_model$order]) %>% 
                 nest(-cluster) %>% 
                 mutate(cluster_dend = row_number()) %>% 
                 unnest(data) %>% 
@@ -344,11 +350,11 @@ shinyApp(
         output$clustering_plot_dendrogram <- renderPlot({
             
             # stop here if clustering hasn't been run yet
-            validate(need(is(store$cluster, 'hclust'),
+            validate(need(is(store$cluster_model, 'hclust'),
                           'Cluster the data first'))
             
             # retrieve the current cluster model and k cluster value
-            cluster <- store$cluster
+            cluster <- store$cluster_model
             k <- input$clustering_slider_n_clusters
             h <- input$clustering_slider_dendrogram_depth
             
@@ -373,7 +379,7 @@ shinyApp(
             
             store$separation_metrics <- cluster_stats(
                 dist_matrix = as.dist(store$dist_matrix),
-                cluster_model = store$cluster,
+                cluster_model = store$cluster_model,
                 k_min = input$clustering_slider_separation_range[1],
                 k_max = input$clustering_slider_separation_range[2]
             )
@@ -403,60 +409,44 @@ shinyApp(
         # plot the silhouette width
         output$clustering_plot_separation <- renderPlot({
             
-            # stop here if silhouette width hasn't been run yet
-            validate(need(is(store$separation_metrics, 'data.frame'),
-                          'Calculate the silhouette width first'))
+          # stop here if silhouette width hasn't been run yet
+          validate(need(is(store$separation_metrics, 'data.frame'),
+                        'Calculate the silhouette width first'))
             
-            # enframe
-            # widths <- as.data.frame(store$s_width$All.index)
-            # widths$name <- rownames(widths)
-            # 
-            # # plot it
-            # p <- widths %>% 
-            #     rename(value = `store$s_width$All.index`) %>% 
-            #     mutate(name = as.numeric(name)) %>% 
-            #     ggplot(aes(x = name, y = value)) +
-            #     geom_line(color = 'grey30') +
-            #     geom_area(alpha = 0.4) +
-            #     geom_point(color = 'grey30') +
-            #     labs(title = "Silhouette width",
-            #          subtitle = 'Greater width is better',
-            #          x = 'n clusters',
-            #          y = 'Silhouette width') 
+          # plot it
+          p <- store$separation_metrics %>% 
+            rename(`CH index` = ch_norm,
+                   `Silhouette width` = silhouette_norm) %>% 
+            pivot_longer(cols = c("CH index", "Silhouette width")) %>% 
+            ggplot(aes(x = k, y = value, group = name, color = name)) +
+            geom_line(size = 1.2) +
+            labs(title = "Cluster seperation measured by Calinski-Harabasz index and silhouette width",
+                 subtitle = 'Optimal clusters: minimum CH, maximum silhouette width',
+                 x = 'n clusters',
+                 y = 'Normalized index',
+                 color = NULL) +
+            theme(legend.position = 'bottom')
             
-            p <- store$separation_metrics %>% 
-              rename(`CH index` = ch_norm,
-                     `Silhouette width` = silhouette_norm) %>% 
-              pivot_longer(cols = c("CH index", "Silhouette width")) %>% 
-              ggplot(aes(x = k, y = value, group = name, color = name)) +
-              geom_line(size = 1.2) +
-              labs(title = "Cluster seperation measured by Calinski-Harabasz index and silhouette width",
-                   subtitle = 'Optimal clusters: minimum CH, maximum silhouette width',
-                   x = 'n clusters',
-                   y = 'Normalized index',
-                   color = NULL) +
-              theme(legend.position = 'bottom')
-            
-            return(p)
+          return(p)
         })
         
         # download the clusters
         output$clustering_button_download <- downloadHandler(
             
-            # use plot title as file name but only retain alpha-numeric characters
-            filename <- function() {
-                time <- gsub("-|:| ", "", Sys.time())
-                paste0(time, '_cluster_assignments.csv')
+          # use plot title as file name but only retain alpha-numeric characters
+          filename <- function() {
+            time <- gsub("-|:| ", "", Sys.time())
+            paste0(time, '_cluster_assignments.csv')
             }, 
             
-            # dataframe of clusters to download
-            content <- function(file) {
-                cluster_assignments() %>% 
-                    as.data.frame() %>% 
-                    mutate(row = row_number(),
-                           cluster = sub("  \\|.*", "", `.`)) %>% 
-                    select(-`.`) %>% 
-                write.csv(., file, row.names = FALSE)
+          # dataframe of clusters to download
+          content <- function(file) {
+            cluster_assignments() %>% 
+              as.data.frame() %>% 
+              mutate(row = row_number(),
+                     cluster = sub("  \\|.*", "", `.`)) %>% 
+              select(-`.`) %>% 
+              write.csv(., file, row.names = FALSE)
             }
         )
         
@@ -486,7 +476,7 @@ shinyApp(
             # filter the data to the periods specfiied by the input slider
             # add NA filler rows after each group before calculating transition matrix
             # this prevents end of day looping back to beginning of day for next group
-            freq_data <- store$tidy_data %>% 
+            freq_data <- tidy_data%>% 
                 filter(period >= input$plotting_slider_chord[1],
                        period <= input$plotting_slider_chord[2]) %>% 
                 mutate(value = as.character(value)) %>% 
@@ -504,7 +494,7 @@ shinyApp(
             TRATE_mat <- TRATE_mat / sum(TRATE_mat)
             
             # ensure matrix contains all the states (b/c above filters may remove some)
-            unique_states <- unique(store$tidy_data$value) %>% as.vector()
+            unique_states <- unique(tidy_data$value) %>% as.vector()
             TRATE_filled <- crossing(previous = unique_states, current = unique_states) %>% 
                 left_join(as_tibble(TRATE_mat),
                           by = c('previous', 'current')) %>% 
@@ -525,8 +515,8 @@ shinyApp(
             TRATE_mat <- trans_mat[[2]]
             
             # create the color vector
-            states_included <- intersect(names(store$color_mapping), rownames(TRATE_mat)) #unique(freq_data$value))
-            colors_chord <- as.vector(store$color_mapping[states_included])
+            states_included <- intersect(names(color_mapping), rownames(TRATE_mat)) #unique(freq_data$value))
+            colors_chord <- as.vector(color_mapping[states_included])
             
             # plot the chord diagram
             p <- chorddiag::chorddiag(

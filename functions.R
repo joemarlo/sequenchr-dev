@@ -197,3 +197,32 @@ plot_transition_matrix <- function(transition_matrix){
   return(p)
 }
 
+
+cluster_stats <- function(dist_matrix, cluster_model, k_min, k_max){
+  all_stats <- lapply(k_min:k_max, function(k){
+    c_stats <- fpc::cluster.stats(
+      d = dist_matrix,
+      clustering = stats::cutree(cluster_model, k = k),
+      silhouette = TRUE
+    )
+    return(dplyr::tibble(k = k, ch = c_stats$ch, silhouette = c_stats$avg.silwidth))
+  })
+  
+  all_stats <- dplyr::bind_rows(all_stats)
+  scale_01 <- function(x) (x - min(x)) / diff(range(x))
+  all_stats$ch_norm <- scale_01(all_stats$ch)
+  all_stats$silhouette_norm <- scale_01(all_stats$silhouette)
+  
+  return(all_stats)
+}
+
+
+tidy_sequence_data <- function(sequence_data){
+  sequence_data %>%
+    as_tibble() %>% 
+    setNames(1:ncol(sequence_data)) %>% 
+    mutate(sequenchr_seq_id = row_number()) %>%
+    pivot_longer(cols = setdiff(colnames(.), "sequenchr_seq_id")) %>% 
+    mutate(period = as.numeric(name)) %>% 
+    dplyr::select(-name)
+}
