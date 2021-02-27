@@ -33,8 +33,11 @@ atus_seq <- seqdef(data = atus[, -1],
                    labels = labels,
                    xtstep = 1)
 
+# create random covariate data
+covars_df <- tibble(cov1 = rnorm(1000), cov2 = runif(1000)) #, cov3 = sample(c("yes", "no", 'maybe'), size = 1000, replace = TRUE))
+
 # launch shiny app
-launch_sequenchr(atus_seq)
+launch_sequenchr(atus_seq, covars_df)
 
 
 # scratch work ------------------------------------------------------------
@@ -116,7 +119,6 @@ tidy_data %>%
 
 # clustering --------------------------------------------------------------
 
-
 # compute optimal matching distances
 dist_om_TRATE <- seqdist(atus_seq, method = "OM", indel = 1, sm = "TRATE")
 # dist_om_DHD <- seqdist(atus_seq, method = "DHD")
@@ -132,7 +134,7 @@ s_width <- NbClust::NbClust(
   method = 'ward.D2',
   max.nc = 12,
   min.nc = 6,
-  index = 'silhouette'
+  index =  'silhouette' #'mcclain'
 )
 
 widths <- as.data.frame(s_width$All.index)
@@ -151,8 +153,50 @@ s_width$All.index %>%
   labs(title = "Silhouette width",
        subtitle = 'Greater width is better',
        x = 'n clusters',
-       y = 'Silhouette width')
+       y = 'Silhouette width',)
 # ggsave("Plots/silhouette_width.svg", width = 7, height = 4)
+
+
+cluster_stats <- fpc::cluster.stats(d = as.dist(dist_om_TRATE), 
+                   clustering = cutree(clusters, k = 6),
+                   silhouette = TRUE)
+cluster_stats$ch
+cluster_stats$avg.silwidth
+
+cluster_stats <- function(diss_matrix, clusters, k_min, k_max){
+  all_stats <- lapply(k_min:k_max, function(k){
+    c_stats <- fpc::cluster.stats(
+      d = diss_matrix,
+      clustering = cutree(clusters, k = k),
+      silhouette = TRUE
+    )
+    return(tibble(k = k, ch = c_stats$ch, silhouette = c_stats$avg.silwidth))
+  })
+  
+  all_stats <- bind_rows(all_stats)
+  scale_01 <- function(x) (x - min(x)) / diff(range(x))
+  all_stats$ch_norm <- scale_01(all_stats$ch)
+  all_stats$silhouette_norm <- scale_01(all_stats$silhouette)
+  
+  return(all_stats)
+}
+
+tmp <- cluster_stats(as.dist(dist_om_TRATE), clusters, 2, 10)
+
+tmp %>% 
+  pivot_longer(cols = ends_with('norm')) %>% 
+  ggplot(aes(x = k, y = value, group = name, color = name)) +
+  geom_line() +
+  labs(title = "Silhouette width",
+       subtitle = 'Greater width is better',
+       x = 'n clusters',
+       y = 'Normalized index',
+       caption = "Optimal: minimum CH, maximum silhouette width") 
+
+# s_widths <- cluster::silhouette(dmatrix = dist_om_TRATE,
+#                     x = cutree(clusters, k = 6))
+# mean(s_widths[,3])
+
 
 
 # dendrograms -------------------------------------------------------------
@@ -254,6 +298,7 @@ library(chorddiag)
 
 # add NA filler rows after each group before calculating transition matrix
 freq_data <- tidy_data %>% 
+  # filter(period > 40) %>%
   mutate(value = as.character(value)) %>% 
   group_by(sequenchr_seq_id) %>% 
   group_split() %>% 
@@ -267,8 +312,19 @@ TRATE_mat <- table(tibble(previous = freq_data$value[1:(n-1)],
              current = freq_data$value[2:n]))
 TRATE_mat <- TRATE_mat / sum(TRATE_mat)
 
+unique_states <- unique(tidy_data$value) %>% as.vector()
+TRATE_filled <- crossing(previous = unique_states, current = unique_states) %>% 
+  left_join(as_tibble(TRATE_mat),
+            by = c('previous', 'current')) %>% 
+  replace_na(list(n = 0)) %>% 
+  pivot_wider(names_from = previous, values_from = n)
+TRATE_filled_mat <- as.matrix(TRATE_filled[, -1])
+rownames(TRATE_filled_mat) <- TRATE_filled[[1]]
+# TRATE_filled_mat <- as.table(TRATE_filled_mat, names = c('previous', 'current'))
+# names(TRATE_filled_mat) <- c('previous', 'current')
+
 # plot the chord diagram
-chorddiag(TRATE_mat, groupColors = as.vector(color_mapping), groupnamePadding = 20)
+chorddiag::chorddiag(TRATE_filled_mat, groupColors = as.vector(color_mapping), groupnamePadding = 20)
 
 # corplot
 dplyr::as_tibble(TRATE_mat) %>% 
@@ -281,6 +337,7 @@ dplyr::as_tibble(TRATE_mat) %>%
        fill = 'Transition rate') +
   theme(axis.text.x = element_text(angle = 35, hjust = 1))
 
+dplyr::as_tibble(TRATE_filled_mat, n = 'n', ) .name_repair = c('previous', 'current'))
 
 # other -------------------------------------------------------------------
 

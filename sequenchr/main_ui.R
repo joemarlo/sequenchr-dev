@@ -40,15 +40,6 @@ UI <- fluidPage(
       ),
       br(), br(),
       HTML('<details><summary>Additional settings</summary>'),
-      # br(),
-      # sliderInput(inputId = 'slider_sample_n',
-      #             label = 'Randomly sample the data. Select n',
-      #             min = 100,
-      #             max = 1000, #nrow(sequence_data),
-      #             step = 100,
-      #             value = 1000), #nrow(sequence_data)),
-      # actionButton(inputId = 'button_sample',
-      #              label = 'Sample'),
       br(),
       sliderInput(inputId = 'clustering_slider_facet_ncol',
                   label = 'Number of columns for plot facets',
@@ -63,10 +54,10 @@ UI <- fluidPage(
                   step = 5,
                   value = 50,
                   ticks = FALSE),
-      sliderInput(inputId = 'clustering_slider_silhouette_range',
+      sliderInput(inputId = 'clustering_slider_separation_range',
                   label = 'n clusters to calculate silhouette width at',
                   min = 2,
-                  max = 30,
+                  max = 20,
                   step = 1,
                   value = c(2, 10),
                   ticks = FALSE),
@@ -88,12 +79,12 @@ UI <- fluidPage(
           plotOutput(outputId = 'plotting_plot_sequence',
                      height = 750)
         ),
-        tabPanel(
-          title = 'Top 10',
-          br(),
-          plotOutput(outputId = 'plotting_plot_common',
-                     height = 750)
-        ),
+        # tabPanel(
+        #   title = 'Top 10',
+        #   br(),
+        #   plotOutput(outputId = 'plotting_plot_common',
+        #              height = 750)
+        # ),
         tabPanel(
           title = 'State distribution',
           br(),
@@ -107,7 +98,13 @@ UI <- fluidPage(
                      height = 750)
         ),
         tabPanel(
-          title = "Transition matrix",
+          title = 'Covariates',
+          br(),
+          plotOutput(outputId = 'plotting_plot_covariates',
+                     height = 750)
+        ),
+        tabPanel(
+          title = "Transitions",
           br(),
           h3("The below two plots visualize the frequency of transitions between states"),
           br(),

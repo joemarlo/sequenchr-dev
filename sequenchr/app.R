@@ -20,7 +20,31 @@ source('main_ui.R', local = TRUE)
 appDir <- getwd()
 # sequence_data_default <- atus_seq #mtcars
 sequence_data <- getShinyOption("sequence_data") #sequence_data_default)
+covariates_data <- getShinyOption("covariates_data") 
 
+
+# functions ---------------------------------------------------------------
+
+cluster_stats <- function(dist_matrix, cluster_model, k_min, k_max){
+  all_stats <- lapply(k_min:k_max, function(k){
+    c_stats <- fpc::cluster.stats(
+      d = dist_matrix,
+      clustering = stats::cutree(cluster_model, k = k),
+      silhouette = TRUE
+    )
+    return(dplyr::tibble(k = k, ch = c_stats$ch, silhouette = c_stats$avg.silwidth))
+  })
+  
+  all_stats <- dplyr::bind_rows(all_stats)
+  scale_01 <- function(x) (x - min(x)) / diff(range(x))
+  all_stats$ch_norm <- scale_01(all_stats$ch)
+  all_stats$silhouette_norm <- scale_01(all_stats$silhouette)
+  
+  return(all_stats)
+}
+
+
+# app ---------------------------------------------------------------------
 
 shinyApp(
     ui = UI,
@@ -47,6 +71,12 @@ shinyApp(
             pivot_longer(cols = setdiff(colnames(.), "sequenchr_seq_id")) %>% 
             mutate(period = as.numeric(name)) %>% 
             dplyr::select(-name)
+        if (!is.null(covariates_data)){
+          store$tidy_cov_data <- covariates_data %>% 
+            as_tibble() %>% 
+            mutate(sequenchr_seq_id = row_number()) %>% 
+            pivot_longer(cols = -sequenchr_seq_id)
+        } else store$tidy_cov_data <- NULL
         
         # summary table
         output$summary_table <- renderText({
@@ -253,6 +283,34 @@ shinyApp(
             return(p)
         })
         
+        # covariates plot
+        output$plotting_plot_covariates <- renderPlot({
+          
+          validate(need(is(store$tidy_cov_data, 'data.frame'),
+                        'Covariates data not provided'))
+          
+          if (isFALSE(input$plotting_check_cluster)){
+            
+            # plot without clustering
+            p <- store$tidy_cov_data %>% 
+              ggplot(aes(x = value, group = name)) + 
+              geom_density()
+            
+          } else {
+            # plot with cluster
+            p <- dplyr::tibble(cluster = cluster_assignments(),
+                               sequenchr_seq_id = 1:length(cluster_assignments())) %>%
+              right_join(store$tidy_cov_data, by = 'sequenchr_seq_id') %>%
+              ggplot(aes(x = value, group = name)) +
+              geom_density() +
+              facet_wrap( ~ cluster,
+                          scales = 'free_y',
+                          ncol = input$clustering_slider_facet_ncol)
+          }
+          
+          return(p)
+        })
+        
 
     # clustering --------------------------------------------------------------
 
@@ -297,13 +355,13 @@ shinyApp(
                     sliderInput(inputId = 'clustering_slider_n_clusters',
                                 label = 'Number of clusters',
                                 min = 2,
-                                max = 30,
+                                max = 20,
                                 step = 1,
                                 value = 1,
                                 ticks = FALSE),
                     br(),
-                    actionButton(inputId = 'clustering_button_silhouette',
-                                 label = 'Calculate silhouette width')
+                    actionButton(inputId = 'clustering_button_separation',
+                                 label = 'Calculate separation metrics')
                 )
             })
             
@@ -389,7 +447,7 @@ shinyApp(
                 scale_x_continuous(labels = cluster_labels$label,
                                    breaks = cluster_labels$x) +
                 scale_y_continuous(labels = scales::comma_format()) +
-                labs(title = "Dendrogram of edit distance with Ward (D2) linkage",
+                labs(title = "Dendrogram",
                      subtitle = 'Helpful subtitle goes here',
                      x = NULL,
                      y = NULL) +
@@ -403,63 +461,83 @@ shinyApp(
         })
         
         # compute and plot silhouette width
-        observeEvent(input$clustering_button_silhouette, {
+        observeEvent(input$clustering_button_separation, {
             # get optimal cluster sizes by calculating silhouette width
-            store$s_width <- NbClust::NbClust(
-                data = NULL,
-                diss = as.dist(store$dist_matrix),
-                distance = NULL,
-                method = 'ward.D2',
-                max.nc = input$clustering_slider_silhouette_range[2],
-                min.nc = input$clustering_slider_silhouette_range[1],
-                index = 'silhouette'
+            # store$s_width <- NbClust::NbClust(
+            #     data = NULL,
+            #     diss = as.dist(store$dist_matrix),
+            #     distance = NULL,
+            #     method = 'ward.D2',
+            #     max.nc = input$clustering_slider_separation_range[2],
+            #     min.nc = input$clustering_slider_separation_range[1],
+            #     index = 'silhouette'
+            # )
+            
+            store$separation_metrics <- cluster_stats(
+                dist_matrix = as.dist(store$dist_matrix),
+                cluster_model = store$cluster,
+                k_min = input$clustering_slider_separation_range[1],
+                k_max = input$clustering_slider_separation_range[2]
             )
             
             # update slider with best k value
-            updateSelectInput(session = session,
-                              inputId = 'clustering_slider_n_clusters',
-                              selected = store$s_width$Best.nc[['Number_clusters']])
+            # updateSelectInput(session = session,
+            #                   inputId = 'clustering_slider_n_clusters',
+            #                   selected = store$s_width$Best.nc[['Number_clusters']])
             
             # remove and add silhouette plot tab
             removeTab(inputId = 'plotting_tabs',
-                      target = 'Silhouette plot')
+                      target = 'Separation plot')
             insertTab(
                 inputId = 'plotting_tabs',
                 target = 'Dendrogram',
                 position = 'after',
                 select = TRUE,
                 tab = tabPanel(
-                    title = 'Silhouette plot',
+                    title = 'Separation plot',
                     br(),
-                    plotOutput(outputId = 'clustering_plot_silhouette',
+                    plotOutput(outputId = 'clustering_plot_separation',
                                height = 600)
                 )
             )
         })
         
         # plot the silhouette width
-        output$clustering_plot_silhouette <- renderPlot({
+        output$clustering_plot_separation <- renderPlot({
             
             # stop here if silhouette width hasn't been run yet
-            validate(need(is(store$s_width, 'list'),
+            validate(need(is(store$separation_metrics, 'data.frame'),
                           'Calculate the silhouette width first'))
             
             # enframe
-            widths <- as.data.frame(store$s_width$All.index)
-            widths$name <- rownames(widths)
+            # widths <- as.data.frame(store$s_width$All.index)
+            # widths$name <- rownames(widths)
+            # 
+            # # plot it
+            # p <- widths %>% 
+            #     rename(value = `store$s_width$All.index`) %>% 
+            #     mutate(name = as.numeric(name)) %>% 
+            #     ggplot(aes(x = name, y = value)) +
+            #     geom_line(color = 'grey30') +
+            #     geom_area(alpha = 0.4) +
+            #     geom_point(color = 'grey30') +
+            #     labs(title = "Silhouette width",
+            #          subtitle = 'Greater width is better',
+            #          x = 'n clusters',
+            #          y = 'Silhouette width') 
             
-            # plot it
-            p <- widths %>% 
-                rename(value = `store$s_width$All.index`) %>% 
-                mutate(name = as.numeric(name)) %>% 
-                ggplot(aes(x = name, y = value)) +
-                geom_line(color = 'grey30') +
-                geom_area(alpha = 0.4) +
-                geom_point(color = 'grey30') +
-                labs(title = "Silhouette width",
-                     subtitle = 'Greater width is better',
-                     x = 'n clusters',
-                     y = 'Silhouette width') 
+            p <- store$separation_metrics %>% 
+              rename(`CH index` = ch_norm,
+                     `Silhouette width` = silhouette_norm) %>% 
+              pivot_longer(cols = c("CH index", "Silhouette width")) %>% 
+              ggplot(aes(x = k, y = value, group = name, color = name)) +
+              geom_line(size = 1.2) +
+              labs(title = "Cluster seperation measured by Calinski-Harabasz index and silhouette width",
+                   subtitle = 'Optimal clusters: minimum CH, maximum silhouette width',
+                   x = 'n clusters',
+                   y = 'Normalized index',
+                   color = NULL) +
+              theme(legend.position = 'bottom')
             
             return(p)
         })
@@ -527,7 +605,17 @@ shinyApp(
                                           current = freq_data$value[2:n]))
             TRATE_mat <- TRATE_mat / sum(TRATE_mat)
             
-            return(list(freq_data, TRATE_mat))
+            # ensure matrix contains all the states (b/c above filters may remove some)
+            unique_states <- unique(store$tidy_data$value) %>% as.vector()
+            TRATE_filled <- crossing(previous = unique_states, current = unique_states) %>% 
+                left_join(as_tibble(TRATE_mat),
+                          by = c('previous', 'current')) %>% 
+                replace_na(list(n = 0)) %>% 
+                pivot_wider(names_from = previous, values_from = n)
+            TRATE_filled_mat <- as.matrix(TRATE_filled[, -1])
+            rownames(TRATE_filled_mat) <- TRATE_filled[[1]]
+            
+            return(list(TRATE_filled, TRATE_filled_mat))
         })
         
         # render the chord plot
@@ -554,17 +642,20 @@ shinyApp(
             return(p)
         })
         
-        # render the correlation plot
+        # render the transition plot
         output$explore_plot_matrix <- renderPlot({
             
             # get the transition matrix
-            TRATE_mat <- transition_matrix()[[2]]
+            TRATE_mat <- transition_matrix()[[1]]
             
             # plot it
             # TODO: issue here that labels should be comprehensive regardless of period
-            p <- dplyr::as_tibble(TRATE_mat) %>%
-                ggplot(aes(x = previous, y = current, fill = n)) +
+            # TODO: add clustering
+            p <- TRATE_mat %>%
+                pivot_longer(cols = -current, names_to = "previous", values_to = "n") %>% 
+                ggplot(aes(x = previous, y = current, fill = n, label = round(n, 3))) +
                 geom_tile() +
+                geom_text(color = 'grey90') +
                 scale_fill_viridis_c() +
                 labs(title = "Transition matrix",
                      subtitle = "A helpful subtitle",
@@ -572,7 +663,7 @@ shinyApp(
                      y = 'To state',
                      fill = 'Transition rate') +
                 theme(axis.text.x = element_text(angle = 35, hjust = 1))
-            
+                
             return(p)
         })
         
